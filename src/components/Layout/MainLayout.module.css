@@ -1,0 +1,68 @@
+.layout {
+  height: 100vh;
+}
+
+.sider {
+  border-right: 1px solid #3c3c3c;
+  display: flex;
+  flex-direction: column;
+}
+
+.logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-bottom: 1px solid #3c3c3c;
+  padding: 0 16px;
+}
+
+.logoIcon {
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+}
+
+.logoText {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.menu {
+  border: none !important;
+  margin-top: 8px;
+  flex: 1;
+}
+
+.menu :global(.ant-menu-item) {
+  margin: 4px 8px !important;
+  border-radius: 6px !important;
+}
+
+.themeSwitch {
+  padding: 16px;
+  border-top: 1px solid #3c3c3c;
+  display: flex;
+  justify-content: center;
+}
+
+.contentLayout {
+  overflow: hidden;
+}
+
+.content {
+  padding: 24px;
+  overflow: auto;
+}
+
+.footer {
+  text-align: center;
+  font-size: 12px;
+  padding: 12px 24px;
+  border-top: 1px solid #3c3c3c;
+}

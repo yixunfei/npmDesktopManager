@@ -1,0 +1,63 @@
+.container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-color, #cccccc);
+}
+
+.content {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-secondary, #2d2d2d);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.tabContent {
+  padding: 16px 0;
+}
+
+.userInfo, .loginPrompt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.registrySection {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.label {
+  font-size: 14px;
+  color: var(--text-secondary, #999);
+  white-space: nowrap;
+}
+
+.registryInput {
+  flex: 1;
+}
+
+.presets h4 {
+  margin: 0 0 12px 0;
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}
+
+.presetButtons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

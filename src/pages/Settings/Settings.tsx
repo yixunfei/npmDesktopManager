@@ -1,0 +1,618 @@
+import React, { useEffect, useState } from 'react'
+import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, message } from 'antd'
+import {
+  UserOutlined, SettingOutlined, 
+  DeleteOutlined, SyncOutlined, FolderOpenOutlined,
+  EditOutlined, QuestionCircleOutlined,
+  CloudServerOutlined, InfoCircleOutlined,
+  LoginOutlined, SafetyCertificateOutlined
+} from '@ant-design/icons'
+import { useAppStore } from '../../stores/appStore'
+import styles from './Settings.module.css'
+
+const SettingsPage: React.FC = () => {
+  const [npmConfig, setNpmConfig] = useState<any>({})
+  const [currentUser, setCurrentUser] = useState<string>('')
+  const [registry, setRegistry] = useState<string>('')
+  const [npmInfo, setNpmInfo] = useState<any>({})
+  const [cachePath, setCachePath] = useState<string>('')
+  const [loading, setLoading] = useState(false)
+  const [configEditVisible, setConfigEditVisible] = useState(false)
+  const [configForm] = Form.useForm()
+  const [publishedPackages, setPublishedPackages] = useState<any[]>([])
+  const [helpContent, setHelpContent] = useState<string>('')
+  const [helpVisible, setHelpVisible] = useState(false)
+  const [loginVisible, setLoginVisible] = useState(false)
+  const [loginForm] = Form.useForm()
+  
+  const addNotification = useAppStore((state) => state.addNotification)
+  
+  useEffect(() => {
+    loadConfig()
+    loadNpmInfo()
+    loadCachePath()
+  }, [])
+  
+  const loadConfig = async () => {
+    try {
+      const config = await window.electronAPI.npm.configList()
+      setNpmConfig(config)
+      setRegistry(config.registry || 'https://registry.npmjs.org/')
+      
+      const user = await window.electronAPI.npm.whoami()
+      setCurrentUser(user)
+      
+      if (user) {
+        const packages = await window.electronAPI.npm.getPublished(user)
+        setPublishedPackages(packages)
+      }
+    } catch (error) {
+      console.error('Failed to load config:', error)
+    }
+  }
+  
+  const loadNpmInfo = async () => {
+    try {
+      const info = await window.electronAPI.system.getNpmInfo()
+      setNpmInfo(info)
+    } catch (error) {
+      console.error('Failed to load npm info:', error)
+    }
+  }
+  
+  const loadCachePath = async () => {
+    try {
+      const path = await window.electronAPI.system.getCachePath()
+      setCachePath(path)
+    } catch (error) {
+      console.error('Failed to load cache path:', error)
+    }
+  }
+  
+  const handleSetRegistry = async () => {
+    if (!registry.trim()) {
+      message.warning('请输入 registry 地址')
+      return
+    }
+    
+    setLoading(true)
+    try {
+      await window.electronAPI.npm.configSet('registry', registry)
+      addNotification({
+        type: 'success',
+        message: '设置成功',
+        description: `Registry 已设置为 ${registry}`
+      })
+      await loadConfig()
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '设置失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleLogin = async () => {
+    setLoginVisible(true)
+    loginForm.resetFields()
+  }
+  
+  const handleLoginSubmit = async (values: any) => {
+    setLoading(true)
+    try {
+      if (values.authType === 'token') {
+        await window.electronAPI.npm.configSet('//registry.npmjs.org/:_authToken', values.token)
+      } else if (values.authType === 'legacy') {
+        await window.electronAPI.npm.adduser(values.registry || undefined)
+      } else {
+        await window.electronAPI.npm.login(values.registry || undefined)
+      }
+      addNotification({
+        type: 'success',
+        message: '登录成功'
+      })
+      setLoginVisible(false)
+      await loadConfig()
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '登录失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleLogout = async () => {
+    setLoading(true)
+    try {
+      await window.electronAPI.npm.logout(registry !== 'https://registry.npmjs.org/' ? registry : undefined)
+      setCurrentUser('')
+      setPublishedPackages([])
+      addNotification({
+        type: 'success',
+        message: '登出成功'
+      })
+      await loadConfig()
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '登出失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleClearCache = async () => {
+    setLoading(true)
+    try {
+      const result = await window.electronAPI.system.clearCache()
+      addNotification({
+        type: 'success',
+        message: '缓存清理成功',
+        description: result
+      })
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '缓存清理失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleUpdateNpm = async () => {
+    setLoading(true)
+    try {
+      const result = await window.electronAPI.system.updateNpm()
+      addNotification({
+        type: 'success',
+        message: 'npm 更新成功',
+        description: result
+      })
+      await loadNpmInfo()
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: 'npm 更新失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleShowHelp = async (command?: string) => {
+    setLoading(true)
+    try {
+      const content = await window.electronAPI.system.npmHelp(command)
+      setHelpContent(content)
+      setHelpVisible(true)
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '获取帮助失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleSetCachePath = async () => {
+    const newPath = await window.electronAPI.selectDirectory()
+    if (newPath) {
+      setLoading(true)
+      try {
+        await window.electronAPI.system.setCachePath(newPath)
+        addNotification({
+          type: 'success',
+          message: '缓存目录已更改',
+          description: newPath
+        })
+        await loadCachePath()
+      } catch (error: any) {
+        addNotification({
+          type: 'error',
+          message: '更改缓存目录失败',
+          description: error.message
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
+  
+  const handleConfigEdit = () => {
+    setConfigEditVisible(true)
+    configForm.resetFields()
+  }
+  
+  const handleSaveConfig = async (values: any) => {
+    setLoading(true)
+    try {
+      if (values.key && values.value) {
+        await window.electronAPI.npm.configSet(values.key, values.value)
+        addNotification({
+          type: 'success',
+          message: '配置已保存'
+        })
+        await loadConfig()
+      }
+      setConfigEditVisible(false)
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '保存配置失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleDeleteConfig = async (key: string) => {
+    setLoading(true)
+    try {
+      await window.electronAPI.npm.configDelete(key)
+      addNotification({
+        type: 'success',
+        message: '配置已删除'
+      })
+      await loadConfig()
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '删除配置失败',
+        description: error.message
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleOpenNpmrc = async () => {
+    try {
+      await window.electronAPI.npm.configEdit()
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        message: '打开配置文件失败',
+        description: error.message
+      })
+    }
+  }
+  
+  const publishedColumns = [
+    {
+      title: '包名',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string) => <Tag color="blue">{text}</Tag>
+    },
+    {
+      title: '版本',
+      dataIndex: 'version',
+      key: 'version'
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'date',
+      key: 'date',
+      render: (text: string) => text ? new Date(text).toLocaleDateString() : '-'
+    }
+  ]
+  
+  const configItems = [
+    { key: 'registry', label: 'Registry' },
+    { key: 'cache', label: '缓存目录' },
+    { key: 'prefix', label: '全局前缀' },
+    { key: 'userconfig', label: '用户配置文件' },
+    { key: 'init-version', label: 'init版本' },
+    { key: 'author', label: '作者' },
+    { key: 'email', label: '邮箱' }
+  ]
+  
+  const TabItems = [
+    {
+      key: 'user',
+      label: '用户信息',
+      icon: <UserOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          {currentUser ? (
+            <div className={styles.userInfo}>
+              <Alert
+                message={`已登录: ${currentUser}`}
+                type="success"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+              <Button danger onClick={handleLogout} loading={loading}>
+                登出
+              </Button>
+              
+              <Divider />
+              
+              <h4 style={{ marginBottom: 12 }}>已发布的包</h4>
+              <Table 
+                dataSource={publishedPackages} 
+                columns={publishedColumns}
+                rowKey="name"
+                size="small"
+                pagination={false}
+              />
+            </div>
+          ) : (
+            <div className={styles.loginPrompt}>
+              <Alert
+                message="未登录"
+                description="登录以发布包到 npm registry"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+              <Button type="primary" icon={<LoginOutlined />} onClick={handleLogin}>
+                登录 npm
+              </Button>
+            </div>
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'registry',
+      label: 'Registry设置',
+      icon: <CloudServerOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <div className={styles.registrySection}>
+            <label className={styles.label}>当前 Registry:</label>
+            <Input
+              value={registry}
+              onChange={(e) => setRegistry(e.target.value)}
+              placeholder="https://registry.npmjs.org/"
+              className={styles.registryInput}
+            />
+            <Button type="primary" onClick={handleSetRegistry} loading={loading}>
+              设置
+            </Button>
+          </div>
+          
+          <Divider />
+          
+          <div className={styles.presets}>
+            <h4>常用 Registry:</h4>
+            <div className={styles.presetButtons}>
+              <Button size="small" onClick={() => setRegistry('https://registry.npmjs.org/')}>
+                npm 官方
+              </Button>
+              <Button size="small" onClick={() => setRegistry('https://registry.npmmirror.com')}>
+                淘宝镜像
+              </Button>
+              <Button size="small" onClick={() => setRegistry('https://registry.yarnpkg.com')}>
+                Yarn
+              </Button>
+              <Button size="small" onClick={() => setRegistry('https://mirror.cloudsmith.io')}>
+                Cloudsmith
+              </Button>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'config',
+      label: '配置管理',
+      icon: <SettingOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <Space style={{ marginBottom: 16 }}>
+            <Button icon={<EditOutlined />} onClick={handleConfigEdit}>
+              添加配置
+            </Button>
+            <Button icon={<FolderOpenOutlined />} onClick={handleOpenNpmrc}>
+              打开配置文件
+            </Button>
+          </Space>
+          
+          <Table 
+            dataSource={configItems.filter(item => npmConfig[item.key])}
+            columns={[
+              {
+                title: '配置项',
+                dataIndex: 'label',
+                key: 'label'
+              },
+              {
+                title: '值',
+                dataIndex: 'key',
+                key: 'value',
+                render: (key: string) => npmConfig[key] || '-'
+              },
+              {
+                title: '操作',
+                key: 'action',
+                render: (_, record: any) => (
+                  <Space>
+                    <Tooltip title="编辑">
+                      <Button 
+                        size="small" 
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          configForm.setFieldsValue({ key: record.key, value: npmConfig[record.key] })
+                          setConfigEditVisible(true)
+                        }}
+                      />
+                    </Tooltip>
+                    <Tooltip title="删除">
+                      <Button 
+                        size="small" 
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleDeleteConfig(record.key)}
+                      />
+                    </Tooltip>
+                  </Space>
+                )
+              }
+            ]}
+            rowKey="key"
+            size="small"
+            pagination={false}
+          />
+        </div>
+      )
+    },
+    {
+      key: 'system',
+      label: '系统信息',
+      icon: <InfoCircleOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <Descriptions bordered column={1}>
+            <Descriptions.Item label="npm 版本">{npmInfo.npmVersion || 'N/A'}</Descriptions.Item>
+            <Descriptions.Item label="Node 版本">{npmInfo.nodeVersion || 'N/A'}</Descriptions.Item>
+            <Descriptions.Item label="Electron 版本">{npmInfo.electronVersion || 'N/A'}</Descriptions.Item>
+            <Descriptions.Item label="平台">{npmInfo.platform || 'N/A'}</Descriptions.Item>
+            <Descriptions.Item label="架构">{npmInfo.arch || 'N/A'}</Descriptions.Item>
+            <Descriptions.Item label="缓存目录">
+              <Space>
+                {cachePath}
+                <Button size="small" icon={<FolderOpenOutlined />} onClick={handleSetCachePath}>
+                  更改
+                </Button>
+              </Space>
+            </Descriptions.Item>
+          </Descriptions>
+          
+          <Divider />
+          
+          <Space>
+            <Button icon={<DeleteOutlined />} onClick={handleClearCache} loading={loading}>
+              清理缓存
+            </Button>
+            <Button icon={<SyncOutlined />} onClick={handleUpdateNpm} loading={loading}>
+              更新 npm
+            </Button>
+          </Space>
+        </div>
+      )
+    },
+    {
+      key: 'help',
+      label: '帮助',
+      icon: <QuestionCircleOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Button onClick={() => handleShowHelp()}>查看 npm 帮助</Button>
+            <Button onClick={() => handleShowHelp('install')}>npm install 帮助</Button>
+            <Button onClick={() => handleShowHelp('publish')}>npm publish 帮助</Button>
+            <Button onClick={() => handleShowHelp('config')}>npm config 帮助</Button>
+            <Button onClick={() => handleShowHelp('run-script')}>npm run-script 帮助</Button>
+            <Button onClick={() => handleShowHelp('update')}>npm update 帮助</Button>
+          </Space>
+        </div>
+      )
+    }
+  ]
+  
+  return (
+    <Spin spinning={loading}>
+      <div className={styles.container}>
+        <div className={styles.header}>
+          <h2 className={styles.title}>设置</h2>
+        </div>
+        
+        <div className={styles.content}>
+          <Tabs items={TabItems} />
+        </div>
+        
+        <Modal
+          title="添加/编辑配置"
+          open={configEditVisible}
+          onCancel={() => setConfigEditVisible(false)}
+          onOk={() => configForm.submit()}
+        >
+          <Form form={configForm} onFinish={handleSaveConfig} layout="vertical">
+            <Form.Item name="key" label="配置项" rules={[{ required: true }]}>
+              <Input placeholder="例如: registry" />
+            </Form.Item>
+            <Form.Item name="value" label="值" rules={[{ required: true }]}>
+              <Input placeholder="例如: https://registry.npmjs.org/" />
+            </Form.Item>
+          </Form>
+        </Modal>
+        
+        <Modal
+          title="npm 登录"
+          open={loginVisible}
+          onCancel={() => setLoginVisible(false)}
+          onOk={() => loginForm.submit()}
+        >
+          <Form form={loginForm} onFinish={handleLoginSubmit} layout="vertical" initialValues={{ authType: 'interactive' }}>
+            <Form.Item name="authType" label="认证方式" rules={[{ required: true }]}>
+              <Select>
+                <Select.Option value="interactive">
+                  <Space><SafetyCertificateOutlined /> 交互式登录（推荐）</Space>
+                </Select.Option>
+                <Select.Option value="token">
+                  <Space><LoginOutlined /> Token 认证</Space>
+                </Select.Option>
+                <Select.Option value="legacy">
+                  <Space><UserOutlined /> 传统用户名密码</Space>
+                </Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item name="registry" label="Registry（可选）">
+              <Input placeholder="自定义 registry 地址" />
+            </Form.Item>
+            <Form.Item 
+              noStyle 
+              shouldUpdate={(prev, cur) => prev.authType !== cur.authType}
+            >
+              {({ getFieldValue }) => {
+                const authType = getFieldValue('authType')
+                if (authType === 'token') {
+                  return (
+                    <Form.Item name="token" label="Access Token" rules={[{ required: true }]}>
+                      <Input.Password placeholder="输入 npm access token" />
+                    </Form.Item>
+                  )
+                }
+                return null
+              }}
+            </Form.Item>
+          </Form>
+        </Modal>
+        
+        <Modal
+          title="npm 帮助"
+          open={helpVisible}
+          onCancel={() => setHelpVisible(false)}
+          footer={null}
+          width={700}
+        >
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{helpContent}</pre>
+        </Modal>
+      </div>
+    </Spin>
+  )
+}
+
+export default SettingsPage
