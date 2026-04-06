@@ -62,17 +62,16 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "build/icons/**/*"
+      "icon.jpg"
     ],
     "extraResources": [
       {
-        "from": "build/icons",
-        "to": "icons",
-        "filter": ["**/*"]
+        "from": "icon.jpg",
+        "to": "icon.jpg"
       }
     ],
     "win": {
-      "icon": "build/icons/icon.ico",
+      "icon": "icon.jpg",
       "target": [
         {
           "target": "nsis",
@@ -85,11 +84,11 @@
       ]
     },
     "mac": {
-      "icon": "build/icons/icon.icns",
+      "icon": "icon.jpg",
       "target": ["dmg", "zip"]
     },
     "linux": {
-      "icon": "build/icons",
+      "icon": "icon.jpg",
       "target": ["AppImage", "deb", "rpm"]
     },
     "nsis": {

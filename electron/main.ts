@@ -22,7 +22,7 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     iconPath = join(__dirname, '../../icon.jpg');
   } else {
-    iconPath = join(process.resourcesPath, 'icons/icon.ico');
+    iconPath = join(process.resourcesPath, 'icon.jpg');
   }
   
   mainWindow = new BrowserWindow({
