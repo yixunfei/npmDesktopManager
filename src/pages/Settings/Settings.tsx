@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, message } from 'antd'
+import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, message, Radio } from 'antd'
 import {
   UserOutlined, SettingOutlined, 
   DeleteOutlined, SyncOutlined, FolderOpenOutlined,
   EditOutlined, QuestionCircleOutlined,
   CloudServerOutlined, InfoCircleOutlined,
-  LoginOutlined, SafetyCertificateOutlined
+  LoginOutlined, SafetyCertificateOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import styles from './Settings.module.css'
@@ -24,6 +25,9 @@ const SettingsPage: React.FC = () => {
   const [helpVisible, setHelpVisible] = useState(false)
   const [loginVisible, setLoginVisible] = useState(false)
   const [loginForm] = Form.useForm()
+  const [updateStrategy, setUpdateStrategy] = useState<string>('recommended')
+  const [conflictStrategy, setConflictStrategy] = useState<string>('prompt')
+  const [securitySensitivity, setSecuritySensitivity] = useState<string>('medium')
   
   const addNotification = useAppStore((state) => state.addNotification)
   
@@ -328,6 +332,101 @@ const SettingsPage: React.FC = () => {
   ]
   
   const TabItems = [
+    {
+      key: 'update',
+      label: '更新策略',
+      icon: <ThunderboltOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <div style={{ marginBottom: 24 }}>
+            <h4 style={{ marginBottom: 16 }}>更新策略</h4>
+            <Radio.Group value={updateStrategy} onChange={(e) => setUpdateStrategy(e.target.value)}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Radio value="recommended">
+                  <div>
+                    <strong>推荐更新</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>使用 wanted 版本（符合 package.json 范围，兼容性优先）</div>
+                  </div>
+                </Radio>
+                <Radio value="smart">
+                  <div>
+                    <strong>智能更新</strong>
+                    <Space>
+                      <Tag color="green">兼容性优先</Tag>
+                      <Tag color="orange">其次安全</Tag>
+                    </Space>
+                    <div style={{ color: '#888', fontSize: 12 }}>自动分析选择最佳版本，冲突时提示</div>
+                  </div>
+                </Radio>
+                <Radio value="latest">
+                  <div>
+                    <strong>最新更新</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>使用 latest 版本（可能包含预发布版）</div>
+                  </div>
+                </Radio>
+              </Space>
+            </Radio.Group>
+          </div>
+
+          <Divider />
+
+          <div style={{ marginBottom: 24 }}>
+            <h4 style={{ marginBottom: 16 }}>冲突处理策略</h4>
+            <Radio.Group value={conflictStrategy} onChange={(e) => setConflictStrategy(e.target.value)}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Radio value="prompt">
+                  <div>
+                    <strong>总是提示</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>发现冲突时逐个提示用户选择</div>
+                  </div>
+                </Radio>
+                <Radio value="auto-recommended">
+                  <div>
+                    <strong>自动选择推荐版本</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>发现冲突时自动选择推荐版本（兼容性优先）</div>
+                  </div>
+                </Radio>
+              </Space>
+            </Radio.Group>
+          </div>
+
+          <Divider />
+
+          <div style={{ marginBottom: 24 }}>
+            <h4 style={{ marginBottom: 16 }}>安全更新敏感度</h4>
+            <Radio.Group value={securitySensitivity} onChange={(e) => setSecuritySensitivity(e.target.value)}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Radio value="high">
+                  <div>
+                    <strong>高</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>只要有安全更新就提示</div>
+                  </div>
+                </Radio>
+                <Radio value="medium">
+                  <div>
+                    <strong>中</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>中等及以上风险提示</div>
+                  </div>
+                </Radio>
+                <Radio value="low">
+                  <div>
+                    <strong>低</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>仅严重风险提示</div>
+                  </div>
+                </Radio>
+              </Space>
+            </Radio.Group>
+          </div>
+
+          <Alert
+            message="提示"
+            description="设置将在下次更新时生效"
+            type="info"
+            showIcon
+          />
+        </div>
+      )
+    },
     {
       key: 'user',
       label: '用户信息',

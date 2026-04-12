@@ -6,6 +6,7 @@ import { usePackageStore, PackageInfo } from '../../stores/packageStore'
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import { SecurityAuditModal } from '../../components/Package/SecurityAuditModal'
 import { DependencyTreeModal } from '../../components/Package/DependencyTreeModal'
+import { BatchVersionPreviewModal } from '../../components/Package/BatchVersionPreviewModal'
 import styles from './Project.module.css'
 
 const ProjectPage: React.FC = () => {
@@ -26,6 +27,11 @@ const ProjectPage: React.FC = () => {
   const [auditVisible, setAuditVisible] = useState(false)
   const [depTreeVisible, setDepTreeVisible] = useState(false)
   const [packageSizes, setPackageSizes] = useState<Record<string, any>>({})
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [updatingSelected, setUpdatingSelected] = useState(false)
+  const [previewVisible, setPreviewVisible] = useState(false)
+  const [pendingUpdates, setPendingUpdates] = useState<PackageInfo[]>([])
+  const [uninstallingSelected, setUninstallingSelected] = useState(false)
   
   const currentPath = useAppStore((state) => state.currentPath)
   const addNotification = useAppStore((state) => state.addNotification)
@@ -121,22 +127,48 @@ const ProjectPage: React.FC = () => {
   }
   
   const handleUpdate = async (packageName: string) => {
+    const pkg = projectPackages.find(p => p.name === packageName)
+    if (pkg) {
+      setPendingUpdates([pkg])
+      setPreviewVisible(true)
+    }
+  }
+
+  const executeUpdate = async (selectedPackages: string[]) => {
+    setPreviewVisible(false)
+    setUpdatingSelected(true)
+    let successCount = 0
+    let failCount = 0
+
     try {
-      await updatePackage({
-        packageName,
-        cwd: currentPath
-      })
+      for (const packageName of selectedPackages) {
+        try {
+          await updatePackage({
+            packageName,
+            cwd: currentPath
+          })
+          successCount++
+        } catch {
+          failCount++
+        }
+      }
+
       addNotification({
-        type: 'success',
-        message: '更新成功',
-        description: `${packageName} 已更新到最新版本`
+        type: successCount > 0 ? 'success' : 'info',
+        message: '批量更新完成',
+        description: `成功: ${successCount}, 失败: ${failCount}`
       })
+
+      setSelectedRowKeys([])
+      await fetchProjectPackages(currentPath)
     } catch (error: any) {
       addNotification({
         type: 'error',
-        message: '更新失败',
+        message: '批量更新失败',
         description: error.message
       })
+    } finally {
+      setUpdatingSelected(false)
     }
   }
   
@@ -297,20 +329,94 @@ const ProjectPage: React.FC = () => {
   }
   
   const handleUpdateAll = async () => {
-    try {
-      await updatePackage({ cwd: currentPath })
+    const outdatedPackages = projectPackages.filter(pkg => pkg.outdated)
+    
+    if (outdatedPackages.length === 0) {
       addNotification({
-        type: 'success',
-        message: '全部更新完成'
+        type: 'info',
+        message: '所有包已是最新版本'
       })
-      await fetchProjectPackages(currentPath)
-    } catch (error: any) {
-      addNotification({
-        type: 'error',
-        message: '更新失败',
-        description: error.message
-      })
+      return
     }
+
+    setPendingUpdates(outdatedPackages)
+    setPreviewVisible(true)
+  }
+
+  const handleUpdateSelected = async () => {
+    if (selectedRowKeys.length === 0) {
+      addNotification({
+        type: 'warning',
+        message: '请先选择要更新的包'
+      })
+      return
+    }
+
+    const packagesToUpdate = projectPackages.filter(pkg => 
+      selectedRowKeys.includes(pkg.name) && pkg.outdated
+    )
+    
+    if (packagesToUpdate.length === 0) {
+      addNotification({
+        type: 'warning',
+        message: '没有可更新的包'
+      })
+      return
+    }
+
+    setPendingUpdates(packagesToUpdate)
+    setPreviewVisible(true)
+  }
+
+  const handleUninstallSelected = async () => {
+    if (selectedRowKeys.length === 0) {
+      addNotification({
+        type: 'warning',
+        message: '请先选择要卸载的包'
+      })
+      return
+    }
+
+    Modal.confirm({
+      title: '确认批量卸载',
+      content: `确定要卸载选中的 ${selectedRowKeys.length} 个包吗？`,
+      onOk: async () => {
+        setUninstallingSelected(true)
+        let successCount = 0
+        let failCount = 0
+
+        try {
+          for (const packageName of selectedRowKeys) {
+            try {
+              await uninstallPackage({
+                packageName: packageName as string,
+                cwd: currentPath
+              })
+              successCount++
+            } catch {
+              failCount++
+            }
+          }
+
+          addNotification({
+            type: successCount > 0 ? 'success' : 'error',
+            message: '批量卸载完成',
+            description: `成功: ${successCount}, 失败: ${failCount}`
+          })
+
+          setSelectedRowKeys([])
+          await fetchProjectPackages(currentPath)
+        } catch (error: any) {
+          addNotification({
+            type: 'error',
+            message: '批量卸载失败',
+            description: error.message
+          })
+        } finally {
+          setUninstallingSelected(false)
+        }
+      }
+    })
   }
   
   const handleShowVersions = async (pkg: PackageInfo) => {
@@ -400,6 +506,13 @@ const ProjectPage: React.FC = () => {
     await fetchProjectPackages(currentPath)
   }
   
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys)
+    },
+  }
+
   const columns = [
     {
       title: '包名',
@@ -544,6 +657,24 @@ const ProjectPage: React.FC = () => {
           <Button icon={<CheckCircleOutlined />} onClick={handleCheckAllOutdated} loading={checkingAll}>
             检查更新
           </Button>
+          <Button 
+            icon={<SyncOutlined />} 
+            onClick={handleUpdateSelected}
+            loading={updatingSelected}
+            disabled={selectedRowKeys.length === 0}
+            type={selectedRowKeys.length > 0 ? 'primary' : 'default'}
+          >
+            更新选中 ({selectedRowKeys.length})
+          </Button>
+          <Button 
+            danger
+            icon={<ReloadOutlined />} 
+            onClick={handleUninstallSelected}
+            loading={uninstallingSelected}
+            disabled={selectedRowKeys.length === 0}
+          >
+            卸载选中 ({selectedRowKeys.length})
+          </Button>
           <Button icon={<SyncOutlined />} onClick={handleUpdateAll}>
             更新全部
           </Button>
@@ -588,6 +719,7 @@ const ProjectPage: React.FC = () => {
                     size="small"
                     pagination={false}
                     scroll={{ x: 900 }}
+                    rowSelection={rowSelection}
                   />
                 )}
               </Spin>
@@ -737,6 +869,13 @@ const ProjectPage: React.FC = () => {
         type="project"
         projectPath={currentPath}
         onClose={() => setDepTreeVisible(false)}
+      />
+      
+      <BatchVersionPreviewModal
+        visible={previewVisible}
+        packages={pendingUpdates}
+        onConfirm={executeUpdate}
+        onCancel={() => setPreviewVisible(false)}
       />
     </div>
   )

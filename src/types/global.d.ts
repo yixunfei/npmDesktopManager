@@ -1,5 +1,3 @@
-import { InstallArgs, UninstallArgs, UpdateArgs, PublishArgs, MoveDepArgs, InstallVersionArgs } from '../../electron/preload'
-
 declare global {
   interface Window {
     electronAPI: {
@@ -77,7 +75,19 @@ declare global {
       }
       
       openExternal: (url: string) => Promise<void>
+      
+      onCommandLog: (callback: (data: CommandLogEntry) => void) => void
+      removeCommandLogListener: () => void
     }
+  }
+  
+  interface CommandLogEntry {
+    id: string
+    timestamp: number
+    command: string
+    output?: string
+    error?: string
+    status: 'running' | 'success' | 'error'
   }
   
   interface PackageSizeInfo {
@@ -118,6 +128,48 @@ declare global {
   interface FileChangeData {
     type: 'package.json'
     path: string
+  }
+
+  interface InstallArgs {
+    packageName: string
+    cwd?: string
+    global?: boolean
+    dev?: boolean
+    version?: string
+  }
+
+  interface UninstallArgs {
+    packageName: string
+    cwd?: string
+    global?: boolean
+  }
+
+  interface UpdateArgs {
+    packageName?: string
+    cwd?: string
+    global?: boolean
+  }
+
+  interface PublishArgs {
+    cwd: string
+    tag?: string
+    access?: 'public' | 'restricted'
+    registry?: string
+  }
+
+  interface MoveDepArgs {
+    packageName: string
+    cwd: string
+    from: 'dependencies' | 'devDependencies'
+    to: 'dependencies' | 'devDependencies'
+  }
+
+  interface InstallVersionArgs {
+    packageName: string
+    version: string
+    cwd?: string
+    global?: boolean
+    dev?: boolean
   }
 }
 

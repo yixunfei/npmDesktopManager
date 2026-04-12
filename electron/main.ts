@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { NpmService } from './services/npm'
+import { NpmService, setNpmServiceWindow } from './services/npm'
 import { ProjectService } from './services/project'
 import { PublishService } from './services/publish'
 import { SystemService } from './services/system'
@@ -45,6 +45,8 @@ function createWindow() {
     mainWindow?.show()
   })
 
+  setNpmServiceWindow(mainWindow)
+
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
@@ -54,6 +56,7 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    setNpmServiceWindow(null as any)
   })
 }
 

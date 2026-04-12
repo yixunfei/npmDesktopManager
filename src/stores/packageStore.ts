@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import semver from 'semver'
 
 export interface PackageInfo {
   name: string
@@ -194,12 +195,23 @@ export const usePackageStore = create<PackageState>()(
             Object.entries(listResult.dependencies).forEach(([name, info]: [string, any]) => {
               const outdated = outdatedResult[name]
               const details = detailsMap[name]
+              const currentVersion = info.version
+              const latestVersion = outdated?.latest || details?.version
+              
+              let isOutdated = !!outdated
+              if (!isOutdated && currentVersion && latestVersion) {
+                try {
+                  isOutdated = semver.lt(currentVersion, latestVersion)
+                } catch {
+                }
+              }
+              
               packages.push({
                 name,
-                version: info.version,
+                version: currentVersion,
                 type: 'dependencies' as const,
-                latest: outdated?.latest || details?.version,
-                outdated: !!outdated,
+                latest: latestVersion,
+                outdated: isOutdated,
                 description: details?.description || '',
                 homepage: details?.homepage,
                 license: details?.license,
@@ -213,12 +225,23 @@ export const usePackageStore = create<PackageState>()(
             Object.entries(listResult.devDependencies).forEach(([name, info]: [string, any]) => {
               const outdated = outdatedResult[name]
               const details = detailsMap[name]
+              const currentVersion = info.version
+              const latestVersion = outdated?.latest || details?.version
+              
+              let isOutdated = !!outdated
+              if (!isOutdated && currentVersion && latestVersion) {
+                try {
+                  isOutdated = semver.lt(currentVersion, latestVersion)
+                } catch {
+                }
+              }
+              
               packages.push({
                 name,
-                version: info.version,
+                version: currentVersion,
                 type: 'devDependencies' as const,
-                latest: outdated?.latest || details?.version,
-                outdated: !!outdated,
+                latest: latestVersion,
+                outdated: isOutdated,
                 description: details?.description || '',
                 homepage: details?.homepage,
                 license: details?.license,
@@ -278,11 +301,22 @@ export const usePackageStore = create<PackageState>()(
             Object.entries(listResult.dependencies).forEach(([name, info]: [string, any]) => {
               const outdated = outdatedResult[name]
               const details = detailsMap[name]
+              const currentVersion = info.version
+              const latestVersion = outdated?.latest || details?.version
+              
+              let isOutdated = !!outdated
+              if (!isOutdated && currentVersion && latestVersion) {
+                try {
+                  isOutdated = semver.lt(currentVersion, latestVersion)
+                } catch {
+                }
+              }
+              
               packages.push({
                 name,
-                version: info.version,
-                latest: outdated?.latest || details?.version,
-                outdated: !!outdated,
+                version: currentVersion,
+                latest: latestVersion,
+                outdated: isOutdated,
                 description: details?.description || '',
                 homepage: details?.homepage,
                 license: details?.license,

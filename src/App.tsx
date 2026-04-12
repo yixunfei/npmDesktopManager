@@ -7,6 +7,7 @@ import Global from './pages/Global/Global'
 import Publish from './pages/Publish/Publish'
 import Settings from './pages/Settings/Settings'
 import { NotificationContainer } from './components/Notification/NotificationContainer'
+import CommandLogWindow from './components/CommandLog/CommandLogWindow'
 import { useAppStore } from './stores/appStore'
 
 const App: React.FC = () => {
@@ -28,6 +29,7 @@ const App: React.FC = () => {
         </Routes>
       </MainLayout>
       <NotificationContainer />
+      <CommandLogWindow />
     </>
   )
 }

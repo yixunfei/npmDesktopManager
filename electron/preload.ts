@@ -4,6 +4,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDefaultPath: () => ipcRenderer.invoke('get-default-path'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   
+  onCommandLog: (callback: (data: any) => void) => {
+    ipcRenderer.on('command-log', (_, data) => callback(data))
+  },
+  removeCommandLogListener: () => {
+    ipcRenderer.removeAllListeners('command-log')
+  },
+  
   npm: {
     search: (query: string) => ipcRenderer.invoke('npm:search', query),
     view: (packageName: string) => ipcRenderer.invoke('npm:view', packageName),

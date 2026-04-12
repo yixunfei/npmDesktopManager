@@ -1,18 +1,59 @@
 import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
+import https from 'https'
+import { BrowserWindow } from 'electron'
 
 const execAsync = promisify(exec)
 
+let mainWindow: BrowserWindow | null = null
+
+export function setNpmServiceWindow(window: BrowserWindow | null) {
+  mainWindow = window
+}
+
+function sendCommandLog(id: string, command: string, output?: string, error?: string, status: 'running' | 'success' | 'error' = 'running') {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('command-log', {
+        id,
+        timestamp: Date.now(),
+        command,
+        output: output ? output.substring(0, 5000) : undefined,
+        error: error ? error.substring(0, 5000) : undefined,
+        status
+      })
+    }
+  } catch (e) {
+  }
+}
+
+async function httpsGet(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      let data = ''
+      res.on('data', (chunk) => { data += chunk })
+      res.on('end', () => { resolve(data) })
+    }).on('error', reject)
+  })
+}
+
 export class NpmService {
   private async execute(command: string, cwd?: string): Promise<{ stdout: string; stderr: string }> {
+    const logId = Date.now().toString() + Math.random().toString(36).substr(2, 9)
+    
+    sendCommandLog(logId, command, undefined, undefined, 'running')
+    
     try {
       const result = await execAsync(command, {
         cwd: cwd || process.cwd(),
         maxBuffer: 1024 * 1024 * 10,
         env: { ...process.env }
       })
+      
+      sendCommandLog(logId, command, result.stdout, result.stderr, 'success')
       return result
     } catch (error: any) {
+      sendCommandLog(logId, command, error.stdout, error.stderr || error.message, 'error')
       throw new Error(error.message || 'Command execution failed')
     }
   }
@@ -39,6 +80,7 @@ export class NpmService {
     
     if (global) command += ' -g'
     if (dev) command += ' --save-dev'
+    command += ' --legacy-peer-deps'
     
     const { stdout, stderr } = await this.execute(command, cwd)
     return stdout || stderr
@@ -55,12 +97,20 @@ export class NpmService {
 
   async update(args: any): Promise<string> {
     const { packageName, cwd, global } = args
-    let command = 'npm update'
-    if (packageName) command += ` ${packageName}`
-    if (global) command += ' -g'
     
-    const { stdout, stderr } = await this.execute(command, cwd)
-    return stdout || stderr
+    if (packageName) {
+      let command = `npm install ${packageName}@latest --legacy-peer-deps`
+      if (global) command += ' -g'
+      
+      const { stdout, stderr } = await this.execute(command, cwd)
+      return stdout || stderr
+    } else {
+      let command = 'npm update --legacy-peer-deps'
+      if (global) command += ' -g'
+      
+      const { stdout, stderr } = await this.execute(command, cwd)
+      return stdout || stderr
+    }
   }
 
   async outdated(cwd: string): Promise<any> {
@@ -203,12 +253,14 @@ export class NpmService {
 
   async installVersion(args: any): Promise<string> {
     const { packageName, version, cwd, global, dev } = args
-    return await this.install({
-      packageName: `${packageName}@${version}`,
-      cwd,
-      global,
-      dev
-    })
+    let command = `npm install ${packageName}@${version}`
+    
+    if (global) command += ' -g'
+    if (dev) command += ' --save-dev'
+    command += ' --legacy-peer-deps'
+    
+    const { stdout, stderr } = await this.execute(command, cwd)
+    return stdout || stderr
   }
 
   async globalOutdated(): Promise<any> {
@@ -252,8 +304,8 @@ export class NpmService {
       if (registry) {
         url = registry
       }
-      const { stdout } = await execAsync(`curl -s ${url}`)
-      return JSON.parse(stdout)
+      const data = await httpsGet(url)
+      return JSON.parse(data)
     } catch (error) {
       return null
     }
@@ -263,8 +315,7 @@ export class NpmService {
     try {
       const pkgVersion = version || 'latest'
       const url = `https://registry.npmjs.org/${packageName}/${pkgVersion}`
-      const { stdout } = await execAsync(`curl -s ${url}`)
-      const data = JSON.parse(stdout)
+      const data = JSON.parse(await httpsGet(url))
       
       const dist = data.dist || {}
       const unpackedSize = dist.unpackedSize || 0
@@ -337,8 +388,7 @@ export class NpmService {
 
   async getPackageReadme(packageName: string): Promise<string> {
     try {
-      const { stdout } = await execAsync(`curl -s https://registry.npmjs.org/${packageName}/latest`)
-      const data = JSON.parse(stdout)
+      const data = JSON.parse(await httpsGet(`https://registry.npmjs.org/${packageName}/latest`))
       return data.readme || 'No README available'
     } catch (error) {
       return 'No README available'
@@ -347,8 +397,7 @@ export class NpmService {
 
   async getDependents(packageName: string): Promise<number> {
     try {
-      const { stdout } = await execAsync(`curl -s "https://registry.npmjs.org/-/v1/search?text=dependencies:${packageName}&size=0"`)
-      const data = JSON.parse(stdout)
+      const data = JSON.parse(await httpsGet(`https://registry.npmjs.org/-/v1/search?text=dependencies:${packageName}&size=0`))
       return data.total || 0
     } catch (error) {
       return 0
@@ -357,7 +406,7 @@ export class NpmService {
 
   async downloadStats(packageName: string): Promise<any> {
     try {
-      const lastWeek = await execAsync(`curl -s "https://api.npmjs.org/downloads/point/last-week/${packageName}"`)
+      const lastWeek = await httpsGet(`https://api.npmjs.org/downloads/point/last-week/${packageName}`)
       return JSON.parse(lastWeek)
     } catch (error) {
       return { downloads: 0 }
