@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
 import { createLogId, formatCommand, sendCommandLog } from './commandLogger'
+import { commandEnv, decodeCommandChunk } from './encoding'
 
 export interface LoggedCommandResult {
   stdout: string
@@ -60,7 +61,7 @@ export function runLoggedCommand(
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
       cwd: cwd || process.cwd(),
-      env: { ...process.env, ...env },
+      env: commandEnv(env),
       shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin),
       windowsHide: true
     })
@@ -76,7 +77,7 @@ export function runLoggedCommand(
     }
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
+      stdout += decodeCommandChunk(chunk)
       if (stdout.length + stderr.length > maxBuffer) {
         child.kill()
         fail(new Error(`Command output exceeded ${Math.round(maxBuffer / 1024 / 1024)}MB`))
@@ -86,7 +87,7 @@ export function runLoggedCommand(
     })
 
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
+      stderr += decodeCommandChunk(chunk)
       if (stdout.length + stderr.length > maxBuffer) {
         child.kill()
         fail(new Error(`Command output exceeded ${Math.round(maxBuffer / 1024 / 1024)}MB`))

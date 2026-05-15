@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AutoComplete, Button, Collapse, Descriptions, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Space, Spin, Table, Tabs, Tag, Tooltip } from 'antd'
+import { Alert, AutoComplete, Button, Collapse, Descriptions, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Space, Spin, Table, Tabs, Tag, Tooltip } from 'antd'
 import {
   ApartmentOutlined,
   CheckCircleOutlined,
+  CloudUploadOutlined,
   CodeOutlined,
   DeleteOutlined,
   DownloadOutlined,
@@ -13,23 +14,84 @@ import {
   ReloadOutlined,
   SettingOutlined,
   SecurityScanOutlined,
+  SwapOutlined,
   SyncOutlined,
   WarningOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
+import { DependencyTreeViewer } from '../../components/Package/DependencyTreeViewer'
+import ProjectPage from '../Project/Project'
+import GlobalPage from '../Global/Global'
+import PublishPage from '../Publish/Publish'
+import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
 import styles from './MultiManager.module.css'
 
+type ManagerType = 'npm' | 'pip' | 'maven'
+
+const MANAGER_ROUTES: Record<ManagerType, string> = {
+  npm: '/npm',
+  pip: '/pip',
+  maven: '/maven'
+}
+
+const MANAGER_OPTIONS = [
+  { label: 'npm', value: 'npm' },
+  { label: 'pip', value: 'pip' },
+  { label: 'Maven', value: 'maven' }
+]
+
 const COMMON_MAVEN_GOALS = ['clean', 'compile', 'test', 'package', 'install', 'clean package', 'dependency:tree']
+const PIP_CONFIG_KEY_OPTIONS = [
+  { value: 'global.index-url', label: 'global.index-url（主镜像源）' },
+  { value: 'global.extra-index-url', label: 'global.extra-index-url（额外镜像源）' },
+  { value: 'global.trusted-host', label: 'global.trusted-host（可信主机）' },
+  { value: 'global.cache-dir', label: 'global.cache-dir（缓存目录）' },
+  { value: 'global.timeout', label: 'global.timeout（超时秒数）' },
+  { value: 'global.proxy', label: 'global.proxy（代理）' }
+]
+const PIP_CONFIG_VALUE_OPTIONS = [
+  { value: 'https://pypi.org/simple', label: 'PyPI 官方' },
+  { value: 'https://pypi.tuna.tsinghua.edu.cn/simple', label: '清华 PyPI' },
+  { value: 'https://mirrors.aliyun.com/pypi/simple', label: '阿里云 PyPI' },
+  { value: 'pypi.org', label: 'pypi.org' },
+  { value: 'pypi.tuna.tsinghua.edu.cn', label: 'pypi.tuna.tsinghua.edu.cn' },
+  { value: 'mirrors.aliyun.com', label: 'mirrors.aliyun.com' }
+]
+const PIP_REPOSITORY_OPTIONS = [
+  { value: 'https://upload.pypi.org/legacy/', label: 'PyPI 官方' },
+  { value: 'https://test.pypi.org/legacy/', label: 'Test PyPI' }
+]
+const MAVEN_REPOSITORY_OPTIONS = [
+  { value: 'https://repo.maven.apache.org/maven2', label: 'Maven Central' },
+  { value: 'https://maven.aliyun.com/repository/public', label: '阿里云公共仓库' },
+  { value: 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/', label: '腾讯云公共仓库' },
+  { value: 'https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/', label: 'Sonatype OSSRH Release' },
+  { value: 'https://s01.oss.sonatype.org/content/repositories/snapshots/', label: 'Sonatype OSSRH Snapshot' },
+  { value: 'https://packages.aliyun.com/maven/repository', label: '阿里云 Packages' },
+  { value: 'https://maven.pkg.github.com/owner/repository', label: 'GitHub Packages' }
+]
 
 function normalizePackageKey(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, '-')
 }
 
-interface MultiManagerPageProps {
-  initialManager?: 'pip' | 'maven'
+function toMavenSearchOptions(deps: MavenSearchResult[], field: 'groupId' | 'artifactId') {
+  return deps.map((dep) => {
+    const version = dep.latestVersion || dep.version
+    const source = dep.description ? ` · ${dep.description}` : ''
+    return {
+      value: field === 'groupId' ? dep.groupId : dep.artifactId,
+      label: `${dep.groupId}:${dep.artifactId}${version ? ` (${version})` : ''}${source}`,
+      dep
+    }
+  })
 }
 
-const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'pip' }) => {
+interface MultiManagerPageProps {
+  initialManager?: ManagerType
+}
+
+const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'npm' }) => {
   const navigate = useNavigate()
   const currentPath = useAppStore((state) => state.currentPath)
   const addNotification = useAppStore((state) => state.addNotification)
@@ -53,13 +115,22 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
   const [pipAuditIssues, setPipAuditIssues] = useState<PipAuditIssue[]>([])
   const [pipTreeVisible, setPipTreeVisible] = useState(false)
   const [pipTree, setPipTree] = useState<any>(null)
+  const [pipVersionVisible, setPipVersionVisible] = useState(false)
+  const [pipSelectedPackage, setPipSelectedPackage] = useState<PipPackageInfo | null>(null)
+  const [pipRepairVisible, setPipRepairVisible] = useState(false)
+  const [pipRepairOutput, setPipRepairOutput] = useState('')
   const [pipSearchOptions, setPipSearchOptions] = useState<Array<{ value: string; label: string }>>([])
   const [pipVersionOptions, setPipVersionOptions] = useState<Array<{ value: string; label: string }>>([])
-  const [pipMirror, setPipMirror] = useState<'official' | 'tsinghua' | 'aliyun'>('official')
+  const [pipMirror, setPipMirror] = useState<'official' | 'tsinghua' | 'aliyun' | 'custom'>('official')
+  const [pipMirrorVisible, setPipMirrorVisible] = useState(false)
+  const [pipMirrorForm] = Form.useForm()
+  const [pipPublishVisible, setPipPublishVisible] = useState(false)
+  const [pipPublishForm] = Form.useForm()
   const [pipForm] = Form.useForm()
   const [pipConfigForm] = Form.useForm()
 
   const [mavenDeps, setMavenDeps] = useState<MavenDependencyInfo[]>([])
+  const [mavenLatestMap, setMavenLatestMap] = useState<Record<string, string>>({})
   const [mavenInfo, setMavenInfo] = useState<MavenGlobalInfo | null>(null)
   const [mavenLoading, setMavenLoading] = useState(false)
   const [mavenAddVisible, setMavenAddVisible] = useState(false)
@@ -68,9 +139,19 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
   const [goalOutput, setGoalOutput] = useState('')
   const [mavenAuditVisible, setMavenAuditVisible] = useState(false)
   const [mavenAuditIssues, setMavenAuditIssues] = useState<MavenAuditIssue[]>([])
-  const [mavenSearchOptions, setMavenSearchOptions] = useState<Array<{ value: string; label: string; dep: MavenSearchResult }>>([])
+  const [mavenTreeVisible, setMavenTreeVisible] = useState(false)
+  const [mavenTree, setMavenTree] = useState<any>(null)
+  const [mavenVersionVisible, setMavenVersionVisible] = useState(false)
+  const [mavenSelectedDep, setMavenSelectedDep] = useState<MavenDependencyInfo | null>(null)
+  const [mavenPublishVisible, setMavenPublishVisible] = useState(false)
+  const [mavenPublishForm] = Form.useForm()
+  const [mavenMirrorVisible, setMavenMirrorVisible] = useState(false)
+  const [mavenMirrorForm] = Form.useForm()
+  const [mavenServerVisible, setMavenServerVisible] = useState(false)
+  const [mavenServerForm] = Form.useForm()
+  const [mavenSearchResults, setMavenSearchResults] = useState<MavenSearchResult[]>([])
   const [mavenVersionOptions, setMavenVersionOptions] = useState<Array<{ value: string; label: string }>>([])
-  const [mavenMirror, setMavenMirror] = useState<'central' | 'aliyun' | 'tencent'>('central')
+  const [mavenMirror, setMavenMirror] = useState<'central' | 'aliyun' | 'tencent' | 'custom'>('central')
   const [customMavenGoals, setCustomMavenGoals] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('custom-maven-goals') || '[]')
@@ -82,7 +163,8 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
   const [draggedGoal, setDraggedGoal] = useState<string | null>(null)
   const [mavenForm] = Form.useForm()
   const [goalForm] = Form.useForm()
-  const [activeManager, setActiveManager] = useState<'pip' | 'maven'>(initialManager)
+  const [activeManager, setActiveManager] = useState<ManagerType>(initialManager)
+  const [projectInfo, setProjectInfo] = useState<any>(null)
 
   const pipRows = useMemo(() => {
     return pipPackages.map((pkg) => ({
@@ -95,6 +177,18 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
   const mavenGoalButtons = useMemo(() => {
     return [...customMavenGoals, ...COMMON_MAVEN_GOALS.filter((goal) => !customMavenGoals.includes(goal))]
   }, [customMavenGoals])
+
+  const mavenGroupOptions = useMemo(() => toMavenSearchOptions(mavenSearchResults, 'groupId'), [mavenSearchResults])
+  const mavenArtifactOptions = useMemo(() => toMavenSearchOptions(mavenSearchResults, 'artifactId'), [mavenSearchResults])
+
+  const detectedManagers = useMemo<ManagerType[]>(() => {
+    if (!projectInfo) return []
+    const result: ManagerType[] = []
+    if (projectInfo.hasPackageJson) result.push('npm')
+    if (projectInfo.hasRequirementsTxt) result.push('pip')
+    if (projectInfo.hasPomXml) result.push('maven')
+    return result
+  }, [projectInfo])
 
   useEffect(() => {
     localStorage.setItem('custom-maven-goals', JSON.stringify(customMavenGoals))
@@ -116,16 +210,26 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     loadMavenInfo()
   }, [currentPath])
 
-  const handleSelectDirectory = async () => {
-    const path = await window.electronAPI.selectDirectory()
-    if (path) {
-      useAppStore.getState().setCurrentPath(path)
-      addNotification({
-        type: 'info',
-        message: '项目路径已切换',
-        description: path
-      })
+  useEffect(() => {
+    loadProjectInfo()
+  }, [currentPath])
+
+  const loadProjectInfo = async () => {
+    if (!currentPath) {
+      setProjectInfo(null)
+      return
     }
+    try {
+      const info = await window.electronAPI.project.detect(currentPath)
+      setProjectInfo(info)
+    } catch {
+      setProjectInfo(null)
+    }
+  }
+
+  const switchManager = (manager: ManagerType) => {
+    setActiveManager(manager)
+    navigate(MANAGER_ROUTES[manager])
   }
 
   const getPipOptions = (): PipCommandOptions => ({
@@ -288,6 +392,29 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     }
   }
 
+  const repairPipCheck = async () => {
+    setPipLoading(true)
+    try {
+      const result = await window.electronAPI.pip.repairCheck(currentPath)
+      setPipRepairOutput(result.output)
+      setPipRepairVisible(true)
+      setPipOutput(result.output)
+      setPipOutputVisible(true)
+      if (result.success > 0) {
+        await loadPipPackages()
+      }
+      addNotification({
+        type: result.failed > 0 ? 'warning' : 'success',
+        message: 'pip 依赖自修复完成',
+        description: `处理 ${result.actions.length} 项，成功 ${result.success} 项`
+      })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: 'pip 依赖自修复失败', description: error.message })
+    } finally {
+      setPipLoading(false)
+    }
+  }
+
   const purgePipCache = async () => {
     setPipLoading(true)
     try {
@@ -372,7 +499,16 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     }
   }
 
-  const applyPipMirror = async (preset: 'official' | 'tsinghua' | 'aliyun') => {
+  const applyPipMirror = async (preset: 'official' | 'tsinghua' | 'aliyun' | 'custom') => {
+    if (preset === 'custom') {
+      pipMirrorForm.setFieldsValue({
+        indexUrl: 'https://pypi.org/simple',
+        trustedHost: 'pypi.org'
+      })
+      setPipMirrorVisible(true)
+      return
+    }
+
     const presets = {
       official: { url: 'https://pypi.org/simple', host: 'pypi.org' },
       tsinghua: { url: 'https://pypi.tuna.tsinghua.edu.cn/simple', host: 'pypi.tuna.tsinghua.edu.cn' },
@@ -388,6 +524,47 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       addNotification({ type: 'success', message: 'pip 镜像已设置', description: target.url })
     } catch (error: any) {
       addNotification({ type: 'error', message: '设置 pip 镜像失败', description: error.message })
+    } finally {
+      setPipLoading(false)
+    }
+  }
+
+  const saveCustomPipMirror = async (values: { indexUrl: string; trustedHost: string }) => {
+    setPipLoading(true)
+    try {
+      await window.electronAPI.pip.configSet('user', 'global.index-url', values.indexUrl)
+      if (values.trustedHost) {
+        await window.electronAPI.pip.configSet('user', 'global.trusted-host', values.trustedHost)
+      }
+      setPipMirror('custom')
+      setPipMirrorVisible(false)
+      pipMirrorForm.resetFields()
+      await loadPipTooling()
+      addNotification({ type: 'success', message: 'pip 自定义镜像已保存', description: values.indexUrl })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: '保存 pip 自定义镜像失败', description: error.message })
+    } finally {
+      setPipLoading(false)
+    }
+  }
+
+  const publishPipPackage = async (values: { repositoryUrl?: string; username?: string; password?: string; buildBefore?: boolean | string }) => {
+    setPipLoading(true)
+    try {
+      const output = await window.electronAPI.pip.publish({
+        cwd: currentPath,
+        repositoryUrl: values.repositoryUrl,
+        username: values.username,
+        password: values.password,
+        buildBefore: values.buildBefore !== false && values.buildBefore !== 'false'
+      })
+      setPipOutput(output)
+      setPipOutputVisible(true)
+      setPipPublishVisible(false)
+      pipPublishForm.resetFields()
+      addNotification({ type: 'success', message: 'pip 发布完成' })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: 'pip 发布失败', description: error.message })
     } finally {
       setPipLoading(false)
     }
@@ -440,6 +617,41 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     }
   }
 
+  const showPipVersions = async (pkg: PipPackageInfo) => {
+    setPipSelectedPackage(pkg)
+    setPipLoading(true)
+    try {
+      const versions = await window.electronAPI.pip.versions(pkg.name)
+      setPipVersionOptions(versions.map((version) => ({ value: version, label: version })))
+      setPipVersionVisible(true)
+    } catch (error: any) {
+      addNotification({ type: 'error', message: '获取 pip 版本失败', description: error.message })
+    } finally {
+      setPipLoading(false)
+    }
+  }
+
+  const installPipVersion = async (version: string) => {
+    if (!pipSelectedPackage) return
+    setPipLoading(true)
+    try {
+      await window.electronAPI.pip.install({
+        packageName: pipSelectedPackage.name,
+        version,
+        cwd: currentPath,
+        user: pipScope === 'user',
+        upgrade: true
+      })
+      setPipVersionVisible(false)
+      await loadPipPackages()
+      addNotification({ type: 'success', message: 'pip 版本切换成功', description: `${pipSelectedPackage.name}@${version}` })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: 'pip 版本切换失败', description: error.message })
+    } finally {
+      setPipLoading(false)
+    }
+  }
+
   const backupPipConfig = async () => {
     setPipLoading(true)
     try {
@@ -458,11 +670,23 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       const detected = await window.electronAPI.maven.detect(currentPath)
       if (!detected.hasPom) {
         setMavenDeps([])
+        setMavenLatestMap({})
         return
       }
 
       const deps = await window.electronAPI.maven.list(currentPath)
       setMavenDeps(deps)
+      const latestEntries = await Promise.all(
+        deps.slice(0, 20).map(async (dep) => {
+          try {
+            const versions = await window.electronAPI.maven.versions(dep.groupId, dep.artifactId)
+            return [`${dep.groupId}:${dep.artifactId}`, versions[0] || dep.version] as const
+          } catch {
+            return [`${dep.groupId}:${dep.artifactId}`, dep.version] as const
+          }
+        })
+      )
+      setMavenLatestMap(Object.fromEntries(latestEntries))
     } catch (error: any) {
       addNotification({
         type: 'error',
@@ -573,7 +797,30 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     }
   }
 
-  const applyMavenMirror = async (preset: 'central' | 'aliyun' | 'tencent') => {
+  const showMavenTree = async () => {
+    setMavenLoading(true)
+    try {
+      const tree = await window.electronAPI.maven.dependencyTree(currentPath)
+      setMavenTree(tree)
+      setMavenTreeVisible(true)
+    } catch (error: any) {
+      addNotification({ type: 'error', message: '生成 Maven 依赖树失败', description: error.message })
+    } finally {
+      setMavenLoading(false)
+    }
+  }
+
+  const applyMavenMirror = async (preset: 'central' | 'aliyun' | 'tencent' | 'custom') => {
+    if (preset === 'custom') {
+      mavenMirrorForm.setFieldsValue({
+        id: 'custom-central',
+        url: 'https://repo.maven.apache.org/maven2',
+        mirrorOf: 'central'
+      })
+      setMavenMirrorVisible(true)
+      return
+    }
+
     const presets = {
       central: { id: 'central-default', url: 'https://repo.maven.apache.org/maven2', mirrorOf: 'central' },
       aliyun: { id: 'aliyun-central', url: 'https://maven.aliyun.com/repository/public', mirrorOf: 'central' },
@@ -592,20 +839,68 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     }
   }
 
+  const saveCustomMavenMirror = async (values: { id: string; url: string; mirrorOf?: string }) => {
+    setMavenLoading(true)
+    try {
+      await window.electronAPI.maven.setMirror(values.id, values.url, values.mirrorOf || 'central')
+      setMavenMirror('custom')
+      setMavenMirrorVisible(false)
+      mavenMirrorForm.resetFields()
+      await loadMavenInfo()
+      addNotification({ type: 'success', message: 'Maven 自定义镜像已保存', description: values.url })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: '保存 Maven 自定义镜像失败', description: error.message })
+    } finally {
+      setMavenLoading(false)
+    }
+  }
+
+  const saveMavenServer = async (values: { id: string; username: string; password: string }) => {
+    setMavenLoading(true)
+    try {
+      await window.electronAPI.maven.setServer(values.id, values.username, values.password)
+      setMavenServerVisible(false)
+      mavenServerForm.resetFields()
+      addNotification({ type: 'success', message: 'Maven 远程仓库凭据已保存' })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: '保存 Maven 远程仓库凭据失败', description: error.message })
+    } finally {
+      setMavenLoading(false)
+    }
+  }
+
+  const publishMavenPackage = async (values: { repositoryId?: string; repositoryUrl?: string; skipTests?: boolean | string; goals?: string }) => {
+    setMavenLoading(true)
+    try {
+      const output = await window.electronAPI.maven.deploy({
+        cwd: currentPath,
+        repositoryId: values.repositoryId,
+        repositoryUrl: values.repositoryUrl,
+        skipTests: values.skipTests === true || values.skipTests === 'true',
+        goals: values.goals
+      })
+      setGoalOutput(output)
+      setGoalOutputVisible(true)
+      setMavenPublishVisible(false)
+      mavenPublishForm.resetFields()
+      addNotification({ type: 'success', message: 'Maven 发布完成' })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: 'Maven 发布失败', description: error.message })
+    } finally {
+      setMavenLoading(false)
+    }
+  }
+
   const searchMavenDependencies = async (query: string) => {
     if (!query.trim()) {
-      setMavenSearchOptions([])
+      setMavenSearchResults([])
       return
     }
     try {
-      const results = await window.electronAPI.maven.search(query)
-      setMavenSearchOptions(results.map((dep) => ({
-        value: `${dep.groupId}:${dep.artifactId}`,
-        label: `${dep.groupId}:${dep.artifactId}${dep.latestVersion ? ` (${dep.latestVersion})` : ''}`,
-        dep
-      })))
+      const results = await window.electronAPI.maven.search(query, currentPath)
+      setMavenSearchResults(results)
     } catch {
-      setMavenSearchOptions([])
+      setMavenSearchResults([])
     }
   }
 
@@ -620,6 +915,38 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       if (versions.length > 0) {
         mavenForm.setFieldValue('version', versions[0])
       }
+    } finally {
+      setMavenLoading(false)
+    }
+  }
+
+  const showMavenVersions = async (dep: MavenDependencyInfo) => {
+    setMavenSelectedDep(dep)
+    setMavenLoading(true)
+    try {
+      const versions = await window.electronAPI.maven.versions(dep.groupId, dep.artifactId)
+      setMavenVersionOptions(versions.map((version) => ({ value: version, label: version })))
+      setMavenVersionVisible(true)
+    } catch (error: any) {
+      addNotification({ type: 'error', message: '获取 Maven 版本失败', description: error.message })
+    } finally {
+      setMavenLoading(false)
+    }
+  }
+
+  const installMavenVersion = async (version: string) => {
+    if (!mavenSelectedDep) return
+    setMavenLoading(true)
+    try {
+      await window.electronAPI.maven.addDependency(currentPath, {
+        ...mavenSelectedDep,
+        version
+      })
+      setMavenVersionVisible(false)
+      await loadMavenDependencies()
+      addNotification({ type: 'success', message: 'Maven 版本切换成功', description: `${mavenSelectedDep.artifactId}:${version}` })
+    } catch (error: any) {
+      addNotification({ type: 'error', message: 'Maven 版本切换失败', description: error.message })
     } finally {
       setMavenLoading(false)
     }
@@ -711,21 +1038,6 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     }
   }
 
-  const showMavenTree = async () => {
-    setMavenLoading(true)
-    setGoalOutputVisible(true)
-    setGoalOutput('正在生成依赖树...')
-    try {
-      const output = await window.electronAPI.maven.tree(currentPath)
-      setGoalOutput(output)
-    } catch (error: any) {
-      setGoalOutput(error.message)
-      addNotification({ type: 'error', message: '生成 Maven 依赖树失败', description: error.message })
-    } finally {
-      setMavenLoading(false)
-    }
-  }
-
   const pipColumns = [
     {
       title: '包名',
@@ -762,11 +1074,14 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     {
       title: '操作',
       key: 'action',
-      width: 190,
+      width: 240,
       render: (_: any, record: any) => (
         <Space>
           <Tooltip title="详情">
             <Button size="small" icon={<CodeOutlined />} onClick={() => showPipDetail(record.name)} />
+          </Tooltip>
+          <Tooltip title="切换版本">
+            <Button size="small" icon={<SwapOutlined />} onClick={() => showPipVersions(record)} />
           </Tooltip>
           <Tooltip title="升级">
             <Button size="small" icon={<SyncOutlined />} onClick={() => updatePipPackage(record.name)} />
@@ -800,6 +1115,20 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       render: (text: string) => text ? <Tag>{text}</Tag> : <Tag color="orange">继承/变量</Tag>
     },
     {
+      title: '最新',
+      key: 'latest',
+      width: 150,
+      render: (_: any, record: MavenDependencyInfo) => {
+        const latest = mavenLatestMap[`${record.groupId}:${record.artifactId}`]
+        if (!latest) return '-'
+        return (
+          <Tag color={latest !== record.version ? 'blue' : 'green'}>
+            {latest}
+          </Tag>
+        )
+      }
+    },
+    {
       title: 'Scope',
       dataIndex: 'scope',
       key: 'scope',
@@ -809,11 +1138,16 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     {
       title: '操作',
       key: 'action',
-      width: 90,
+      width: 140,
       render: (_: any, record: MavenDependencyInfo) => (
-        <Popconfirm title={`移除 ${record.artifactId}?`} onConfirm={() => removeMavenDependency(record)}>
-          <Button size="small" danger icon={<DeleteOutlined />} />
-        </Popconfirm>
+        <Space>
+          <Tooltip title="切换版本">
+            <Button size="small" icon={<SwapOutlined />} onClick={() => showMavenVersions(record)} />
+          </Tooltip>
+          <Popconfirm title={`移除 ${record.artifactId}?`} onConfirm={() => removeMavenDependency(record)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       )
     }
   ]
@@ -822,36 +1156,77 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.titleRow}>
-          <h2 className={styles.title}>包管理器</h2>
+          <div>
+            <h2 className={styles.title}>依赖管理</h2>
+            <div className={styles.subtitle}>先选择 npm、pip 或 Maven，再进入项目依赖、全局依赖、发布与配置操作。</div>
+          </div>
           <Segmented
             value={activeManager}
-            onChange={(value) => {
-              const next = value as 'pip' | 'maven'
-              setActiveManager(next)
-              navigate(next === 'pip' ? '/pip' : '/maven')
-            }}
-            options={[
-              { label: 'Python pip', value: 'pip' },
-              { label: 'Java Maven', value: 'maven' }
-            ]}
+            onChange={(value) => switchManager(value as ManagerType)}
+            options={MANAGER_OPTIONS}
           />
         </div>
         <div className={styles.actions}>
-          <span className={styles.pathInfo}>
-            <span className={styles.pathLabel}>项目路径:</span>
-            <span className={styles.pathValue}>{currentPath}</span>
-          </span>
-          <Button icon={<FolderOpenOutlined />} onClick={handleSelectDirectory}>
-            选择目录
+          <ProjectPathBar compact />
+          <Button icon={<SettingOutlined />} onClick={() => navigate('/tool-versions')}>
+            项目工具版本
           </Button>
         </div>
       </div>
 
-      <Tabs activeKey={activeManager} onChange={(key: string) => {
-        const next = key as 'pip' | 'maven'
-        setActiveManager(next)
-        navigate(next === 'pip' ? '/pip' : '/maven')
-      }} items={[
+      <Alert
+        className={styles.detectBanner}
+        type={detectedManagers.length > 0 ? 'success' : 'info'}
+        showIcon
+        message={detectedManagers.length > 0 ? '已识别当前项目依赖类型' : '请选择项目目录或手动选择管理器'}
+        description={
+          <Space wrap>
+            {detectedManagers.length > 0 ? (
+              detectedManagers.map((manager) => (
+                <Button
+                  key={manager}
+                  size="small"
+                  type={activeManager === manager ? 'primary' : 'default'}
+                  onClick={() => switchManager(manager)}
+                >
+                  {manager === 'npm' ? `npm${projectInfo?.packageManager ? ` (${projectInfo.packageManager})` : ''}` : manager === 'pip' ? 'pip / requirements.txt' : 'Maven / pom.xml'}
+                </Button>
+              ))
+            ) : (
+              <span>未检测到 package.json、requirements.txt 或 pom.xml；仍可通过上方切换器选择要管理的依赖类型。</span>
+            )}
+          </Space>
+        }
+      />
+
+      <Tabs className={styles.managerTabs} activeKey={activeManager} onChange={(key: string) => switchManager(key as ManagerType)} items={[
+        {
+          key: 'npm',
+          label: 'npm 管理',
+          children: (
+            <div className={styles.panel}>
+              <Tabs
+                items={[
+                  {
+                    key: 'project',
+                    label: '项目依赖',
+                    children: <ProjectPage hideToolchainPanel hideProjectSelector />
+                  },
+                  {
+                    key: 'global',
+                    label: '全局依赖',
+                    children: <GlobalPage />
+                  },
+                  {
+                    key: 'publish',
+                    label: '发布管理',
+                    children: <PublishPage />
+                  }
+                ]}
+              />
+            </div>
+          )
+        },
         {
           key: 'pip',
           label: 'Python pip',
@@ -881,11 +1256,17 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
                 <Button icon={<ExportOutlined />} onClick={exportRequirements} disabled={!currentPath}>
                   导出 requirements.txt
                 </Button>
+                <Button icon={<CloudUploadOutlined />} onClick={() => setPipPublishVisible(true)} disabled={!currentPath}>
+                  发布到 PyPI
+                </Button>
                 <Button icon={<CodeOutlined />} onClick={showRequirements} disabled={!currentPath}>
                   查看 requirements
                 </Button>
                 <Button icon={<CheckCircleOutlined />} onClick={runPipCheck}>
                   依赖检查
+                </Button>
+                <Button icon={<CheckCircleOutlined />} onClick={repairPipCheck}>
+                  自修复依赖
                 </Button>
                 <Button icon={<SecurityScanOutlined />} onClick={runPipAudit}>
                   安全审计
@@ -926,14 +1307,15 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
                         <Segmented
                           value={pipMirror}
                           onChange={(value) => {
-                            const next = value as 'official' | 'tsinghua' | 'aliyun'
+                            const next = value as 'official' | 'tsinghua' | 'aliyun' | 'custom'
                             setPipMirror(next)
                             applyPipMirror(next)
                           }}
                           options={[
                             { label: '官方 PyPI', value: 'official' },
                             { label: '清华镜像', value: 'tsinghua' },
-                            { label: '阿里云镜像', value: 'aliyun' }
+                            { label: '阿里云镜像', value: 'aliyun' },
+                            { label: '自定义', value: 'custom' }
                           ]}
                         />
                       )
@@ -1036,6 +1418,12 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
                 <Button icon={<CodeOutlined />} onClick={() => setGoalVisible(true)} disabled={!currentPath}>
                   执行 Maven Goal
                 </Button>
+                <Button icon={<CloudUploadOutlined />} onClick={() => setMavenPublishVisible(true)} disabled={!currentPath}>
+                  发布/Deploy
+                </Button>
+                <Button icon={<SettingOutlined />} onClick={() => setMavenServerVisible(true)}>
+                  远程仓库凭据
+                </Button>
                 <Button icon={<SettingOutlined />} onClick={openMavenSettings}>
                   打开 settings.xml
                 </Button>
@@ -1074,14 +1462,15 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
                         <Segmented
                           value={mavenMirror}
                           onChange={(value) => {
-                            const next = value as 'central' | 'aliyun' | 'tencent'
+                            const next = value as 'central' | 'aliyun' | 'tencent' | 'custom'
                             setMavenMirror(next)
                             applyMavenMirror(next)
                           }}
                           options={[
                             { label: '官方 Central', value: 'central' },
                             { label: '阿里云', value: 'aliyun' },
-                            { label: '腾讯云', value: 'tencent' }
+                            { label: '腾讯云', value: 'tencent' },
+                            { label: '自定义', value: 'custom' }
                           ]}
                         />
                       )
@@ -1144,7 +1533,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
             </div>
           )
         }
-      ].filter((item) => item.key === activeManager)} />
+      ]} />
 
       <Modal
         title="安装 pip 包"
@@ -1220,10 +1609,62 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       >
         <Form form={pipConfigForm} layout="vertical" onFinish={savePipConfig}>
           <Form.Item name="key" label="配置项" rules={[{ required: true, message: '请输入配置项' }]}>
-            <Input placeholder="例如: global.index-url" />
+            <AutoComplete options={PIP_CONFIG_KEY_OPTIONS} placeholder="选择常用配置项或输入自定义 key" />
           </Form.Item>
           <Form.Item name="value" label="值" rules={[{ required: true, message: '请输入配置值' }]}>
-            <Input placeholder="例如: https://pypi.org/simple" />
+            <AutoComplete options={PIP_CONFIG_VALUE_OPTIONS} placeholder="选择默认场景值或输入自定义值" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="自定义 pip 镜像源"
+        open={pipMirrorVisible}
+        onCancel={() => setPipMirrorVisible(false)}
+        onOk={() => pipMirrorForm.submit()}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form form={pipMirrorForm} layout="vertical" onFinish={saveCustomPipMirror}>
+          <Form.Item name="indexUrl" label="Index URL" rules={[{ required: true, message: '请输入镜像源地址' }]}>
+            <AutoComplete options={PIP_CONFIG_VALUE_OPTIONS} placeholder="例如: https://pypi.org/simple" />
+          </Form.Item>
+          <Form.Item name="trustedHost" label="Trusted Host">
+            <AutoComplete options={PIP_CONFIG_VALUE_OPTIONS} placeholder="例如: pypi.org" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="发布 Python 包"
+        open={pipPublishVisible}
+        onCancel={() => setPipPublishVisible(false)}
+        onOk={() => pipPublishForm.submit()}
+        okText="发布"
+        cancelText="取消"
+      >
+        <Form
+          form={pipPublishForm}
+          layout="vertical"
+          onFinish={publishPipPackage}
+          initialValues={{ repositoryUrl: 'https://upload.pypi.org/legacy/', buildBefore: 'true' }}
+        >
+          <Form.Item name="repositoryUrl" label="远程仓库">
+            <AutoComplete options={PIP_REPOSITORY_OPTIONS} placeholder="PyPI/TestPyPI 或自定义 repository-url" />
+          </Form.Item>
+          <Form.Item name="username" label="用户名">
+            <Input placeholder="__token__ 或仓库用户名" />
+          </Form.Item>
+          <Form.Item name="password" label="密码 / Token">
+            <Input.Password placeholder="PyPI token 或仓库密码" />
+          </Form.Item>
+          <Form.Item name="buildBefore" label="发布前构建">
+            <Select
+              options={[
+                { value: 'true', label: '是，先执行 python -m build' },
+                { value: 'false', label: '否，使用现有 dist 产物' }
+              ]}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -1253,6 +1694,34 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       </Modal>
 
       <Modal
+        title={`切换 pip 版本 - ${pipSelectedPackage?.name || ''}`}
+        open={pipVersionVisible}
+        onCancel={() => setPipVersionVisible(false)}
+        footer={null}
+        width={560}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <span>当前版本: <Tag color="blue">{pipSelectedPackage?.version || '-'}</Tag></span>
+          <div className={styles.versions}>
+            {pipVersionOptions.length === 0 ? (
+              <Empty description="未找到版本信息" />
+            ) : (
+              pipVersionOptions.slice(0, 50).map((item) => (
+                <Tag
+                  key={item.value}
+                  className={styles.versionTag}
+                  color={item.value === pipSelectedPackage?.version ? 'blue' : 'default'}
+                  onClick={() => installPipVersion(item.value)}
+                >
+                  {item.value}
+                </Tag>
+              ))
+            )}
+          </div>
+        </Space>
+      </Modal>
+
+      <Modal
         title="pip 输出"
         open={pipOutputVisible}
         onCancel={() => setPipOutputVisible(false)}
@@ -1260,6 +1729,16 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
         width={800}
       >
         <pre className={styles.output}>{pipOutput}</pre>
+      </Modal>
+
+      <Modal
+        title="pip 依赖自修复结果"
+        open={pipRepairVisible}
+        onCancel={() => setPipRepairVisible(false)}
+        footer={null}
+        width={800}
+      >
+        <pre className={styles.output}>{pipRepairOutput}</pre>
       </Modal>
 
       <Modal
@@ -1288,15 +1767,12 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
         )}
       </Modal>
 
-      <Modal
+      <DependencyTreeViewer
         title="pip 依赖树"
-        open={pipTreeVisible}
-        onCancel={() => setPipTreeVisible(false)}
-        footer={null}
-        width={900}
-      >
-        <pre className={styles.output}>{JSON.stringify(pipTree, null, 2)}</pre>
-      </Modal>
+        visible={pipTreeVisible}
+        data={pipTree}
+        onClose={() => setPipTreeVisible(false)}
+      />
 
       <Modal
         title="添加 Maven 依赖"
@@ -1309,7 +1785,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
         <Form form={mavenForm} layout="vertical" onFinish={addMavenDependency}>
           <Form.Item name="groupId" label="groupId" rules={[{ required: true, message: '请输入 groupId' }]}>
             <AutoComplete
-              options={mavenSearchOptions}
+              options={mavenGroupOptions}
               onSearch={searchMavenDependencies}
               onSelect={(_, option) => {
                 const dep = (option as any).dep as MavenSearchResult
@@ -1320,12 +1796,12 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
                 })
                 setMavenVersionOptions(dep.latestVersion ? [{ value: dep.latestVersion, label: dep.latestVersion }] : [])
               }}
-              placeholder="输入 groupId、artifactId 或关键字搜索"
+              placeholder="输入 groupId，自动提示本地仓库与 Maven Central"
             />
           </Form.Item>
           <Form.Item name="artifactId" label="artifactId" rules={[{ required: true, message: '请输入 artifactId' }]}>
             <AutoComplete
-              options={mavenSearchOptions}
+              options={mavenArtifactOptions}
               onSearch={searchMavenDependencies}
               onSelect={(_, option) => {
                 const dep = (option as any).dep as MavenSearchResult
@@ -1336,7 +1812,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
                 })
                 setMavenVersionOptions(dep.latestVersion ? [{ value: dep.latestVersion, label: dep.latestVersion }] : [])
               }}
-              placeholder="例如: commons-lang3"
+              placeholder="输入 artifactId 或关键字搜索"
             />
           </Form.Item>
           <Form.Item label="version" required>
@@ -1378,6 +1854,140 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       </Modal>
 
       <Modal
+        title={`切换 Maven 版本 - ${mavenSelectedDep?.artifactId || ''}`}
+        open={mavenVersionVisible}
+        onCancel={() => setMavenVersionVisible(false)}
+        footer={null}
+        width={560}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <span>当前版本: <Tag color="blue">{mavenSelectedDep?.version || '继承/变量'}</Tag></span>
+          <div className={styles.versions}>
+            {mavenVersionOptions.length === 0 ? (
+              <Empty description="未找到版本信息" />
+            ) : (
+              mavenVersionOptions.slice(0, 50).map((item) => (
+                <Tag
+                  key={item.value}
+                  className={styles.versionTag}
+                  color={item.value === mavenSelectedDep?.version ? 'blue' : 'default'}
+                  onClick={() => installMavenVersion(item.value)}
+                >
+                  {item.value}
+                </Tag>
+              ))
+            )}
+          </div>
+        </Space>
+      </Modal>
+
+      <Modal
+        title="自定义 Maven 镜像"
+        open={mavenMirrorVisible}
+        onCancel={() => setMavenMirrorVisible(false)}
+        onOk={() => mavenMirrorForm.submit()}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form form={mavenMirrorForm} layout="vertical" onFinish={saveCustomMavenMirror}>
+          <Form.Item name="id" label="Mirror ID" rules={[{ required: true, message: '请输入 mirror id' }]}>
+            <Input placeholder="例如: company-central" />
+          </Form.Item>
+          <Form.Item name="url" label="镜像 URL" rules={[{ required: true, message: '请输入镜像 URL' }]}>
+            <AutoComplete options={MAVEN_REPOSITORY_OPTIONS} placeholder="例如: https://repo.maven.apache.org/maven2" />
+          </Form.Item>
+          <Form.Item name="mirrorOf" label="Mirror Of">
+            <AutoComplete
+              options={[
+                { value: 'central', label: 'central' },
+                { value: '*', label: '*' },
+                { value: 'external:*', label: 'external:*' }
+              ]}
+              placeholder="默认 central"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="Maven 远程仓库凭据"
+        open={mavenServerVisible}
+        onCancel={() => setMavenServerVisible(false)}
+        onOk={() => mavenServerForm.submit()}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form form={mavenServerForm} layout="vertical" onFinish={saveMavenServer}>
+          <Form.Item name="id" label="Server ID" rules={[{ required: true, message: '请输入 server id' }]}>
+            <AutoComplete
+              options={[
+                { value: 'releases', label: 'releases' },
+                { value: 'snapshots', label: 'snapshots' },
+                { value: 'github', label: 'github' },
+                { value: 'ossrh', label: 'ossrh' }
+              ]}
+              placeholder="需与 pom.xml distributionManagement 或 deploy 配置一致"
+            />
+          </Form.Item>
+          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+            <Input placeholder="仓库用户名或 token 用户名" />
+          </Form.Item>
+          <Form.Item name="password" label="密码 / Token" rules={[{ required: true, message: '请输入密码或 token' }]}>
+            <Input.Password placeholder="远程仓库密码或 token" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="发布 Maven 包"
+        open={mavenPublishVisible}
+        onCancel={() => setMavenPublishVisible(false)}
+        onOk={() => mavenPublishForm.submit()}
+        okText="发布"
+        cancelText="取消"
+      >
+        <Form
+          form={mavenPublishForm}
+          layout="vertical"
+          onFinish={publishMavenPackage}
+          initialValues={{ goals: 'deploy', skipTests: 'true', repositoryId: 'releases' }}
+        >
+          <Form.Item name="goals" label="发布 Goal">
+            <AutoComplete
+              options={[
+                { value: 'deploy', label: 'deploy' },
+                { value: 'clean deploy', label: 'clean deploy' },
+                { value: 'deploy -Prelease', label: 'deploy -Prelease' }
+              ]}
+              placeholder="默认 deploy"
+            />
+          </Form.Item>
+          <Form.Item name="repositoryId" label="远程仓库 ID">
+            <AutoComplete
+              options={[
+                { value: 'releases', label: 'releases' },
+                { value: 'snapshots', label: 'snapshots' },
+                { value: 'github', label: 'github' },
+                { value: 'ossrh', label: 'ossrh' }
+              ]}
+              placeholder="与 settings.xml server id 一致"
+            />
+          </Form.Item>
+          <Form.Item name="repositoryUrl" label="远程仓库 URL">
+            <AutoComplete options={MAVEN_REPOSITORY_OPTIONS} placeholder="留空则使用 pom.xml distributionManagement" />
+          </Form.Item>
+          <Form.Item name="skipTests" label="跳过测试">
+            <Select
+              options={[
+                { value: 'true', label: '是，追加 -DskipTests' },
+                { value: 'false', label: '否' }
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
         title="命令输出"
         open={goalOutputVisible}
         onCancel={() => setGoalOutputVisible(false)}
@@ -1386,6 +1996,13 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'p
       >
         <pre className={styles.output}>{goalOutput}</pre>
       </Modal>
+
+      <DependencyTreeViewer
+        title="Maven 依赖树"
+        visible={mavenTreeVisible}
+        data={mavenTree}
+        onClose={() => setMavenTreeVisible(false)}
+      />
 
       <Modal
         title="Maven 安全审计"

@@ -46,10 +46,12 @@ export default defineConfig({
     outDir: 'dist',
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
-          antd: ['antd', '@ant-design/icons'],
-          state: ['zustand', 'semver']
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router-dom)[\\/]/.test(id)) return 'react'
+          if (/[\\/]node_modules[\\/](antd|@ant-design[\\/]icons)[\\/]/.test(id)) return 'antd'
+          if (/[\\/]node_modules[\\/](zustand|semver)[\\/]/.test(id)) return 'state'
+          return undefined
         }
       }
     }

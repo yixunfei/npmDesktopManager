@@ -28,6 +28,12 @@
   margin-bottom: 0;
 }
 
+.subtitle {
+  margin-top: 6px;
+  color: var(--text-secondary, #999);
+  font-size: 13px;
+}
+
 .actions {
   display: flex;
   align-items: center;
@@ -62,6 +68,14 @@
   background: var(--bg-secondary, #2d2d2d);
   padding: 16px;
   border-radius: 8px;
+}
+
+.detectBanner {
+  margin-bottom: 16px;
+}
+
+.managerTabs :global(.ant-tabs-nav) {
+  display: none;
 }
 
 .scopeRow {
@@ -156,4 +170,17 @@
 .requirements {
   max-height: 420px;
   overflow: auto;
+}
+
+.versions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.versionTag {
+  cursor: pointer;
+  margin-bottom: 4px;
 }

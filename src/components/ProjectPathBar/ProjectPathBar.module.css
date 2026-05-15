@@ -1,0 +1,42 @@
+.pathBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px 6px 12px;
+  background: var(--bg-secondary, #2d2d2d);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 6px;
+}
+
+.expanded {
+  flex: 1;
+}
+
+.compact {
+  max-width: 560px;
+}
+
+.label {
+  flex: 0 0 auto;
+  color: var(--text-secondary, #999);
+  font-size: 13px;
+}
+
+.value {
+  min-width: 120px;
+  overflow: hidden;
+  color: var(--text-color, #ccc);
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expanded .value {
+  flex: 1;
+}
+
+.empty {
+  color: var(--text-secondary, #999);
+}

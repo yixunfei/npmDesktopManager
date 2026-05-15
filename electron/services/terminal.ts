@@ -3,6 +3,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { createLogId } from './commandLogger'
+import { commandEnv, decodeCommandChunk } from './encoding'
 
 interface TerminalSession {
   id: string
@@ -25,7 +26,7 @@ export class TerminalService {
     const shell = this.getShell()
     const child = spawn(shell.bin, shell.args, {
       cwd: workingDirectory,
-      env: { ...process.env, TERM: process.env.TERM || 'xterm-256color' },
+      env: commandEnv({ TERM: process.env.TERM || 'xterm-256color' }),
       shell: false,
       windowsHide: true
     })
@@ -34,11 +35,11 @@ export class TerminalService {
     this.sessions.set(id, session)
 
     child.stdout.on('data', (chunk) => {
-      this.send('terminal:data', { id, data: chunk.toString(), stream: 'stdout' })
+      this.send('terminal:data', { id, data: decodeCommandChunk(chunk), stream: 'stdout' })
     })
 
     child.stderr.on('data', (chunk) => {
-      this.send('terminal:data', { id, data: chunk.toString(), stream: 'stderr' })
+      this.send('terminal:data', { id, data: decodeCommandChunk(chunk), stream: 'stderr' })
     })
 
     child.on('error', (error) => {
@@ -85,7 +86,14 @@ export class TerminalService {
     if (process.platform === 'win32') {
       return {
         bin: 'powershell.exe',
-        args: ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass'],
+        args: [
+          '-NoLogo',
+          '-NoExit',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          '$utf8 = New-Object System.Text.UTF8Encoding $false; [Console]::InputEncoding = $utf8; [Console]::OutputEncoding = $utf8; $OutputEncoding = $utf8; chcp 65001 > $null'
+        ],
         label: 'PowerShell'
       }
     }

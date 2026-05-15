@@ -57,6 +57,7 @@ declare global {
         versions: (packageName: string) => Promise<string[]>
         show: (packageName: string, cwd?: string) => Promise<PipPackageDetail | null>
         check: (cwd?: string) => Promise<string>
+        repairCheck: (cwd?: string) => Promise<PipRepairResult>
         configList: (scope?: PipConfigScope) => Promise<PipConfigItem[]>
         configFile: (scope?: PipConfigScope) => Promise<string>
         backupConfig: (scope?: PipConfigScope) => Promise<string>
@@ -66,15 +67,17 @@ declare global {
         cachePurge: () => Promise<string>
         audit: (cwd?: string) => Promise<{ issues: PipAuditIssue[]; raw: string; error?: string }>
         installTool: (tool: 'pip-audit' | 'pipdeptree', cwd?: string) => Promise<string>
-        dependencyTree: (cwd?: string) => Promise<any>
+        dependencyTree: (cwd?: string) => Promise<PipDependencyTreeNode[]>
+        publish: (args: PipPublishArgs) => Promise<string>
       }
 
       maven: {
         detect: (cwd: string) => Promise<{ hasPom: boolean; path: string }>
         list: (cwd: string) => Promise<MavenDependencyInfo[]>
         tree: (cwd: string) => Promise<string>
+        dependencyTree: (cwd: string) => Promise<MavenDependencyTreeNode | null>
         runGoal: (cwd: string, goal: string) => Promise<string>
-        search: (query: string) => Promise<MavenSearchResult[]>
+        search: (query: string, cwd?: string) => Promise<MavenSearchResult[]>
         versions: (groupId: string, artifactId: string) => Promise<string[]>
         info: (cwd?: string) => Promise<MavenGlobalInfo>
         effectiveSettings: (cwd?: string) => Promise<string>
@@ -82,6 +85,8 @@ declare global {
         backupSettings: () => Promise<string>
         setLocalRepository: (repositoryPath: string) => Promise<void>
         setMirror: (id: string, url: string, mirrorOf?: string) => Promise<void>
+        setServer: (id: string, username: string, password: string) => Promise<void>
+        deploy: (args: MavenDeployArgs) => Promise<string>
         securityAudit: (cwd: string) => Promise<{ issues: MavenAuditIssue[]; reportPath: string; raw?: string; error?: string }>
         goOffline: (cwd: string) => Promise<string>
         purgeLocalRepository: (cwd: string) => Promise<string>
@@ -108,6 +113,12 @@ declare global {
         writePackage: (projectPath: string, content: any) => Promise<void>
         getPackagePath: (projectPath: string) => Promise<string>
         getNodeModulesPath: (projectPath: string, packageName: string) => Promise<string>
+        toolchain: {
+          get: (projectPath: string) => Promise<ToolchainConfig>
+          set: (projectPath: string, tool: ToolName, toolPath: string) => Promise<ToolchainConfig>
+          clear: (projectPath: string, tool: ToolName) => Promise<ToolchainConfig>
+          check: (projectPath: string) => Promise<ToolStatus[]>
+        }
       }
       
       publish: {
@@ -204,6 +215,28 @@ declare global {
     requiredBy?: string
   }
 
+  interface PipDependencyTreeNode {
+    name: string
+    version: string
+    dependencies: PipDependencyTreeNode[]
+  }
+
+  interface PipRepairResult {
+    checkedOutput: string
+    actions: string[]
+    success: number
+    failed: number
+    output: string
+  }
+
+  interface PipPublishArgs {
+    cwd: string
+    repositoryUrl?: string
+    username?: string
+    password?: string
+    buildBefore?: boolean
+  }
+
   interface PipInstallArgs {
     packageName?: string
     version?: string
@@ -221,6 +254,7 @@ declare global {
     packageName: string
     cwd?: string
     user?: boolean
+    version?: string
     breakSystemPackages?: boolean
   }
 
@@ -265,6 +299,11 @@ declare global {
     description?: string
   }
 
+  interface MavenDependencyTreeNode extends MavenDependencyInfo {
+    name: string
+    dependencies: MavenDependencyTreeNode[]
+  }
+
   interface MavenGlobalInfo {
     version: string
     localRepository: string
@@ -279,6 +318,14 @@ declare global {
     name: string
     description: string
     url?: string
+  }
+
+  interface MavenDeployArgs {
+    cwd: string
+    repositoryId?: string
+    repositoryUrl?: string
+    skipTests?: boolean
+    goals?: string
   }
 
   interface TerminalSessionInfo {
@@ -307,6 +354,12 @@ declare global {
     configuredPath?: string
     downloadUrl: string
     message?: string
+  }
+
+  interface ToolchainConfig {
+    npm?: string
+    pip?: string
+    maven?: string
   }
   
   interface FileChangeData {

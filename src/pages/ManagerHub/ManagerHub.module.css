@@ -1,0 +1,68 @@
+.container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  padding: 8px 0 0;
+}
+
+.title {
+  margin-bottom: 8px !important;
+  color: var(--text-color, #cccccc) !important;
+}
+
+.subtitle {
+  color: var(--text-secondary, #999);
+  margin-bottom: 16px !important;
+}
+
+.pathLabel {
+  color: var(--text-secondary, #999);
+}
+
+.pathValue {
+  display: inline-block;
+  max-width: 520px;
+  overflow: hidden;
+  color: var(--primary-color, #1890ff);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card {
+  min-height: 220px;
+  background: var(--bg-secondary, #2d2d2d);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 8px;
+}
+
+.icon {
+  color: var(--primary-color, #1890ff);
+  font-size: 32px;
+}
+
+.cardText {
+  min-height: 44px;
+  color: var(--text-secondary, #999);
+}
+
+.footerLinks {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 980px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

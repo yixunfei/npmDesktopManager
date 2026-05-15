@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, message, Radio } from 'antd'
+import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, message, Radio, AutoComplete } from 'antd'
 import {
   UserOutlined, SettingOutlined, 
   DeleteOutlined, SyncOutlined, FolderOpenOutlined,
@@ -9,7 +9,9 @@ import {
   ThunderboltOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
-import { useSettingsStore } from '../../stores/settingsStore'
+import { AppLanguage, useSettingsStore } from '../../stores/settingsStore'
+import GlobalToolchainPanel from '../../components/Toolchain/GlobalToolchainPanel'
+import { useT } from '../../i18n'
 import styles from './Settings.module.css'
 
 const SettingsPage: React.FC = () => {
@@ -26,14 +28,33 @@ const SettingsPage: React.FC = () => {
   const [helpVisible, setHelpVisible] = useState(false)
   const [loginVisible, setLoginVisible] = useState(false)
   const [loginForm] = Form.useForm()
+  const t = useT()
+  const language = useSettingsStore((state) => state.language)
   const updateStrategy = useSettingsStore((state) => state.updateStrategy)
   const conflictStrategy = useSettingsStore((state) => state.conflictStrategy)
   const securitySensitivity = useSettingsStore((state) => state.securitySensitivity)
+  const setLanguage = useSettingsStore((state) => state.setLanguage)
   const setUpdateStrategy = useSettingsStore((state) => state.setUpdateStrategy)
   const setConflictStrategy = useSettingsStore((state) => state.setConflictStrategy)
   const setSecuritySensitivity = useSettingsStore((state) => state.setSecuritySensitivity)
   
   const addNotification = useAppStore((state) => state.addNotification)
+  const configKeyOptions = [
+    { value: 'registry', label: 'registry（npm 镜像源）' },
+    { value: 'cache', label: 'cache（缓存目录）' },
+    { value: 'prefix', label: 'prefix（全局前缀）' },
+    { value: 'userconfig', label: 'userconfig（用户配置文件）' },
+    { value: 'init-version', label: 'init-version（初始化版本）' },
+    { value: 'init-license', label: 'init-license（初始化许可证）' },
+    { value: 'audit-level', label: 'audit-level（审计级别）' }
+  ]
+  const configValueOptions = [
+    { value: 'https://registry.npmjs.org/', label: 'npm 官方' },
+    { value: 'https://registry.npmmirror.com', label: 'npmmirror' },
+    { value: 'https://registry.yarnpkg.com', label: 'Yarn' },
+    { value: 'public', label: 'public' },
+    { value: 'restricted', label: 'restricted' }
+  ]
   
   useEffect(() => {
     loadConfig()
@@ -348,6 +369,37 @@ const SettingsPage: React.FC = () => {
   
   const TabItems = [
     {
+      key: 'preferences',
+      label: t('settings.preferences'),
+      icon: <SettingOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <Descriptions bordered column={1}>
+            <Descriptions.Item label={t('settings.language')}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Select<AppLanguage>
+                  value={language}
+                  onChange={setLanguage}
+                  style={{ width: 220 }}
+                  options={[
+                    { value: 'zh-CN', label: t('settings.languageChinese') },
+                    { value: 'en-US', label: t('settings.languageEnglish') }
+                  ]}
+                />
+                <span style={{ color: '#888', fontSize: 12 }}>{t('settings.languageDescription')}</span>
+              </Space>
+            </Descriptions.Item>
+          </Descriptions>
+          <Alert
+            style={{ marginTop: 16 }}
+            title={t('settings.savedHint')}
+            type="info"
+            showIcon
+          />
+        </div>
+      )
+    },
+    {
       key: 'update',
       label: '更新策略',
       icon: <ThunderboltOutlined />,
@@ -455,6 +507,16 @@ const SettingsPage: React.FC = () => {
             type="info"
             showIcon
           />
+        </div>
+      )
+    },
+    {
+      key: 'toolchain',
+      label: '全局工具版本',
+      icon: <SettingOutlined />,
+      children: (
+        <div className={styles.tabContent}>
+          <GlobalToolchainPanel />
         </div>
       )
     },
@@ -666,7 +728,7 @@ const SettingsPage: React.FC = () => {
     <Spin spinning={loading}>
       <div className={styles.container}>
         <div className={styles.header}>
-          <h2 className={styles.title}>设置</h2>
+          <h2 className={styles.title}>{t('app.settings')}</h2>
         </div>
         
         <div className={styles.content}>
@@ -681,10 +743,10 @@ const SettingsPage: React.FC = () => {
         >
           <Form form={configForm} onFinish={handleSaveConfig} layout="vertical">
             <Form.Item name="key" label="配置项" rules={[{ required: true }]}>
-              <Input placeholder="例如: registry" />
+              <AutoComplete options={configKeyOptions} placeholder="选择常用配置项或输入自定义 key" />
             </Form.Item>
             <Form.Item name="value" label="值" rules={[{ required: true }]}>
-              <Input placeholder="例如: https://registry.npmjs.org/" />
+              <AutoComplete options={configValueOptions} placeholder="选择默认值或输入自定义值" />
             </Form.Item>
           </Form>
         </Modal>

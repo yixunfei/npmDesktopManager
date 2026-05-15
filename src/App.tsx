@@ -7,11 +7,13 @@ import ToolchainStatusModal from './components/Toolchain/ToolchainStatusModal'
 import { useAppStore } from './stores/appStore'
 
 const Search = lazy(() => import('./pages/Search/Search'))
+const ManagerHub = lazy(() => import('./pages/ManagerHub/ManagerHub'))
 const Project = lazy(() => import('./pages/Project/Project'))
 const Global = lazy(() => import('./pages/Global/Global'))
 const MultiManager = lazy(() => import('./pages/MultiManager/MultiManager'))
 const Publish = lazy(() => import('./pages/Publish/Publish'))
 const Settings = lazy(() => import('./pages/Settings/Settings'))
+const ToolVersions = lazy(() => import('./pages/ToolVersions/ToolVersions'))
 
 const App: React.FC = () => {
   const initCurrentPath = useAppStore((state) => state.initCurrentPath)
@@ -25,13 +27,17 @@ const App: React.FC = () => {
       <MainLayout>
         <Suspense fallback={null}>
           <Routes>
-            <Route path="/" element={<Search />} />
+            <Route path="/" element={<MultiManager initialManager="npm" />} />
+            <Route path="/hub" element={<ManagerHub />} />
+            <Route path="/search" element={<Search />} />
             <Route path="/project" element={<Project />} />
             <Route path="/global" element={<Global />} />
             <Route path="/multi-manager" element={<MultiManager />} />
+            <Route path="/npm" element={<MultiManager initialManager="npm" />} />
             <Route path="/pip" element={<MultiManager initialManager="pip" />} />
             <Route path="/maven" element={<MultiManager initialManager="maven" />} />
             <Route path="/publish" element={<Publish />} />
+            <Route path="/tool-versions" element={<ToolVersions />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Suspense>

@@ -58,7 +58,7 @@ async function httpsGet(url: string): Promise<string> {
 export class NpmService {
   private async executeNpm(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
     try {
-      return await runLoggedCommand(await resolveToolBin('npm'), args, {
+      return await runLoggedCommand(await resolveToolBin('npm', cwd), args, {
         cwd,
         maxBuffer: 1024 * 1024 * 10,
         env: { ...process.env },

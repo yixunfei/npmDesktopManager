@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { AutoComplete, Button, Empty, Spin, Modal, Form, Tag, Dropdown, Space, Tooltip, Table } from 'antd'
-import { ReloadOutlined, PlusOutlined, SwapOutlined, FolderFilled, SyncOutlined, CheckCircleOutlined, WarningOutlined, HistoryOutlined, ApartmentOutlined, InfoCircleOutlined, SecurityScanOutlined } from '@ant-design/icons'
+import { AutoComplete, Button, Descriptions, Empty, Spin, Modal, Form, Tag, Dropdown, Space, Tooltip, Table } from 'antd'
+import { ReloadOutlined, PlusOutlined, SwapOutlined, FolderFilled, SyncOutlined, CheckCircleOutlined, WarningOutlined, HistoryOutlined, ApartmentOutlined, InfoCircleOutlined, SecurityScanOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { usePackageStore, PackageInfo } from '../../stores/packageStore'
 import { resolvePackageUpdateTarget, useSettingsStore } from '../../stores/settingsStore'
@@ -28,6 +28,8 @@ const GlobalPage: React.FC = () => {
   const [auditVisible, setAuditVisible] = useState(false)
   const [packageOptions, setPackageOptions] = useState<Array<{ value: string; label: string }>>([])
   const [installVersionOptions, setInstallVersionOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [globalPrefix, setGlobalPrefix] = useState('')
+  const [cachePath, setCachePath] = useState('')
   
   const addNotification = useAppStore((state) => state.addNotification)
   const updateStrategy = useSettingsStore((state) => state.updateStrategy)
@@ -35,10 +37,26 @@ const GlobalPage: React.FC = () => {
   
   useEffect(() => {
     fetchGlobalPackages()
+    loadGlobalMeta()
   }, [])
+
+  const loadGlobalMeta = async () => {
+    try {
+      const [prefix, cache] = await Promise.all([
+        window.electronAPI.npm.configGet('prefix'),
+        window.electronAPI.system.getCachePath()
+      ])
+      setGlobalPrefix(prefix)
+      setCachePath(cache)
+    } catch {
+      setGlobalPrefix('')
+      setCachePath('')
+    }
+  }
   
   const handleRefresh = async () => {
     await fetchGlobalPackages()
+    await loadGlobalMeta()
     addNotification({
       type: 'success',
       message: '刷新成功'
@@ -178,8 +196,7 @@ const GlobalPage: React.FC = () => {
   
   const handleOpenPackagePath = async (packageName: string) => {
     try {
-      const globalPath = await window.electronAPI.npm.configGet('prefix')
-      const path = `${globalPath}/node_modules/${packageName}`
+      const path = `${globalPrefix || await window.electronAPI.npm.configGet('prefix')}/node_modules/${packageName}`
       await window.electronAPI.system.openPath(path)
     } catch (error: any) {
       addNotification({
@@ -507,6 +524,29 @@ const GlobalPage: React.FC = () => {
         </div>
       </div>
       
+      <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
+        <Descriptions.Item label="全局前缀">
+          <Space>
+            <span>{globalPrefix || '-'}</span>
+            {globalPrefix && (
+              <Button size="small" icon={<FolderOpenOutlined />} onClick={() => window.electronAPI.system.openPath(globalPrefix)}>
+                打开
+              </Button>
+            )}
+          </Space>
+        </Descriptions.Item>
+        <Descriptions.Item label="npm 缓存">
+          <Space>
+            <span>{cachePath || '-'}</span>
+            {cachePath && (
+              <Button size="small" icon={<FolderOpenOutlined />} onClick={() => window.electronAPI.system.openPath(cachePath)}>
+                打开
+              </Button>
+            )}
+          </Space>
+        </Descriptions.Item>
+      </Descriptions>
+
       <div className={styles.content}>
         <Spin spinning={loading}>
           {globalPackages.length === 0 ? (

@@ -2,14 +2,20 @@ import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { app } from 'electron'
 import { resolveToolBin } from './toolchain'
+import { commandEnv, decodeCommandChunk } from './encoding'
 
 const execFileAsync = promisify(execFile)
 function run(bin: string, args: string[] = [], cwd?: string): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync(bin, args, {
     cwd,
+    env: commandEnv(),
     maxBuffer: 1024 * 1024 * 10,
-    windowsHide: true
-  })
+    windowsHide: true,
+    encoding: 'buffer'
+  }).then((result) => ({
+    stdout: decodeBuffer(result.stdout),
+    stderr: decodeBuffer(result.stderr)
+  }))
 }
 
 export class SystemService {
@@ -79,4 +85,9 @@ export class SystemService {
       spawn('gnome-terminal', [`--working-directory=${cwd}`], { cwd, detached: true, stdio: 'ignore' }).unref()
     }
   }
+}
+
+function decodeBuffer(value: Buffer | string): string {
+  if (typeof value === 'string') return value
+  return decodeCommandChunk(value)
 }

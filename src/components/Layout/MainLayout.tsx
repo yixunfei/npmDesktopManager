@@ -3,18 +3,19 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Layout, Menu, Segmented, Tooltip } from 'antd'
 import {
   SearchOutlined,
-  FolderOutlined,
   GlobalOutlined,
   CodeOutlined,
-  CloudUploadOutlined,
+  ApartmentOutlined,
   SettingOutlined,
   DesktopOutlined,
   BulbOutlined,
   BulbFilled,
-  ApartmentOutlined
+  AppstoreOutlined,
+  ToolOutlined
 } from '@ant-design/icons'
 import { ThemeMode, useThemeStore } from '../../stores/themeStore'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
+import { useT } from '../../i18n'
 import styles from './MainLayout.module.css'
 
 const { Sider, Content, Footer } = Layout
@@ -28,8 +29,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const location = useLocation()
   const { mode, setMode } = useThemeStore()
   const resolvedMode = useResolvedTheme(mode)
+  const t = useT()
   
   const isDark = resolvedMode === 'dark'
+  const activeMenuKey = (() => {
+    if (location.pathname === '/' || location.pathname === '/hub' || location.pathname === '/multi-manager') return '/npm'
+    if (location.pathname === '/project' || location.pathname === '/publish') return '/npm'
+    return location.pathname
+  })()
   
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', resolvedMode)
@@ -37,39 +44,39 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   
   const menuItems = [
     {
-      key: '/',
-      icon: <SearchOutlined />,
-      label: '搜索'
-    },
-    {
-      key: '/project',
-      icon: <FolderOutlined />,
-      label: '项目依赖'
-    },
-    {
-      key: '/global',
-      icon: <GlobalOutlined />,
-      label: '全局依赖'
+      key: '/npm',
+      icon: <AppstoreOutlined />,
+      label: t('layout.npmManagement')
     },
     {
       key: '/pip',
       icon: <CodeOutlined />,
-      label: 'pip 管理'
+      label: t('layout.pipManagement')
     },
     {
       key: '/maven',
       icon: <ApartmentOutlined />,
-      label: 'Maven 管理'
+      label: t('layout.mavenManagement')
     },
     {
-      key: '/publish',
-      icon: <CloudUploadOutlined />,
-      label: '发布管理'
+      key: '/global',
+      icon: <GlobalOutlined />,
+      label: t('layout.globalManagement')
+    },
+    {
+      key: '/tool-versions',
+      icon: <ToolOutlined />,
+      label: t('layout.toolVersions')
+    },
+    {
+      key: '/search',
+      icon: <SearchOutlined />,
+      label: t('layout.search')
     },
     {
       key: '/settings',
       icon: <SettingOutlined />,
-      label: '设置'
+      label: t('layout.settings')
     }
   ]
   
@@ -105,16 +112,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             npmDesktopManager
           </div>
         </div>
-        <Menu
+          <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[activeMenuKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           className={styles.menu}
           theme={isDark ? 'dark' : 'light'}
         />
         <div className={styles.themeSwitch}>
-          <Tooltip title="主题跟随系统、亮色或暗色">
+          <Tooltip title={t('layout.themeTooltip')}>
             <Segmented<ThemeMode>
               size="small"
               value={mode}
@@ -146,7 +153,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             borderColor: 'var(--border-color)'
           }}
         >
-          npmDesktopManager v1.0.0 | Made with ❤️
+          npmDesktopManager v1.0.0
         </Footer>
       </Layout>
     </Layout>

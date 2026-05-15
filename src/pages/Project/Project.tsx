@@ -9,9 +9,16 @@ import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import { SecurityAuditModal } from '../../components/Package/SecurityAuditModal'
 import { DependencyTreeModal } from '../../components/Package/DependencyTreeModal'
 import { BatchVersionPreviewModal } from '../../components/Package/BatchVersionPreviewModal'
+import ProjectToolchainPanel from '../../components/Toolchain/ProjectToolchainPanel'
+import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
 import styles from './Project.module.css'
 
-const ProjectPage: React.FC = () => {
+interface ProjectPageProps {
+  hideToolchainPanel?: boolean
+  hideProjectSelector?: boolean
+}
+
+const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, hideProjectSelector = false }) => {
   const [installVisible, setInstallVisible] = useState(false)
   const [moveDepVisible, setMoveDepVisible] = useState(false)
   const [versionVisible, setVersionVisible] = useState(false)
@@ -126,18 +133,6 @@ const ProjectPage: React.FC = () => {
       type: 'success',
       message: '刷新成功'
     })
-  }
-  
-  const handleSelectDirectory = async () => {
-    const path = await window.electronAPI.selectDirectory()
-    if (path) {
-      useAppStore.getState().setCurrentPath(path)
-      addNotification({
-        type: 'info',
-        message: '已切换项目路径',
-        description: path
-      })
-    }
   }
   
   const handleUpdate = async (packageName: string) => {
@@ -684,13 +679,7 @@ const ProjectPage: React.FC = () => {
       <div className={styles.header}>
         <h2 className={styles.title}>项目依赖</h2>
         <div className={styles.actions}>
-          <span className={styles.pathInfo}>
-            <span className={styles.pathLabel}>项目路径:</span>
-            <span className={styles.pathValue}>{currentPath}</span>
-          </span>
-          <Button icon={<FolderOpenOutlined />} onClick={handleSelectDirectory}>
-            选择目录
-          </Button>
+          {!hideProjectSelector && <ProjectPathBar compact />}
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setInstallVisible(true)}>
             安装包
           </Button>
@@ -735,6 +724,10 @@ const ProjectPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {!hideToolchainPanel && (
+        <ProjectToolchainPanel projectPath={currentPath} />
+      )}
       
       <Tabs items={[
         {

@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, readFile, writeFile } from 'fs/promises'
+import { access, copyFile, mkdir, readFile, readdir, writeFile } from 'fs/promises'
 import { basename, dirname, join } from 'path'
 import { homedir } from 'os'
 import { runLoggedCommand } from './commandRunner'
@@ -47,10 +47,38 @@ export interface PipSearchResult {
   description?: string
 }
 
+export interface PipDependencyTreeNode {
+  name: string
+  version: string
+  dependencies: PipDependencyTreeNode[]
+}
+
 export interface PipCommandOptions {
   cwd?: string
   user?: boolean
   breakSystemPackages?: boolean
+}
+
+export interface PipRepairResult {
+  checkedOutput: string
+  actions: string[]
+  success: number
+  failed: number
+  output: string
+}
+
+interface PipRepairAction {
+  label: string
+  spec: string
+  packageName?: string
+}
+
+export interface PipPublishArgs {
+  cwd: string
+  repositoryUrl?: string
+  username?: string
+  password?: string
+  buildBefore?: boolean
 }
 
 function parseJson<T>(stdout: string, fallback: T): T {
@@ -64,7 +92,7 @@ function parseJson<T>(stdout: string, fallback: T): T {
 
 export class PipService {
   private async executePip(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
-    const configured = (await getToolchainConfig()).pip
+    const configured = (await getToolchainConfig(cwd)).pip
     if (configured) {
       const candidates = await getConfiguredPipCandidates(configured, args)
       let lastError: any
@@ -175,11 +203,11 @@ export class PipService {
     return stdout || stderr
   }
 
-  async update(args: { packageName: string; cwd?: string; user?: boolean; breakSystemPackages?: boolean }): Promise<string> {
+  async update(args: { packageName: string; cwd?: string; user?: boolean; version?: string; breakSystemPackages?: boolean }): Promise<string> {
     const command = ['install', '--upgrade']
     if (args.user) command.push('--user')
     if (args.breakSystemPackages) command.push('--break-system-packages')
-    command.push(args.packageName)
+    command.push(args.version ? `${args.packageName}==${args.version}` : args.packageName)
     const { stdout, stderr } = await this.executePip(command, args.cwd)
     return stdout || stderr
   }
@@ -283,51 +311,121 @@ export class PipService {
     }
   }
 
+  async repairCheck(cwd?: string): Promise<PipRepairResult> {
+    const checkedOutput = await this.check(cwd)
+    const repairActions = parsePipCheckRepairActions(checkedOutput)
+    const actions = repairActions.map((action) => action.label)
+    let success = 0
+    let failed = 0
+    const output: string[] = [checkedOutput.trim()]
+
+    for (const action of repairActions) {
+      if (action.packageName) {
+        try {
+          output.push(`\n> pip install --upgrade ${action.packageName}`)
+          output.push(await this.installWithFallbackIndexes(action.packageName, cwd))
+          const nextOutput = await this.check(cwd)
+          if (!parsePipCheckRepairActions(nextOutput).some((item) => item.label === action.label)) {
+            success++
+            continue
+          }
+          output.push(nextOutput.trim())
+        } catch (error: any) {
+          output.push(`${action.packageName}: ${error.stderr || error.message}`)
+        }
+      }
+
+      try {
+        output.push(`\n> pip install --upgrade ${action.spec}`)
+        output.push(await this.installWithFallbackIndexes(action.spec, cwd))
+        success++
+      } catch (error: any) {
+        output.push(`${action.spec}: ${error.stderr || error.message}`)
+        failed++
+      }
+    }
+
+    return {
+      checkedOutput,
+      actions,
+      success,
+      failed,
+      output: output.filter(Boolean).join('\n')
+    }
+  }
+
   async audit(cwd?: string): Promise<{ issues: PipAuditIssue[]; raw: string; error?: string }> {
+    const repairResult = await this.repairCheck(cwd)
+    const repairOutput = repairResult.actions.length > 0 ? repairResult.output : ''
+
     try {
       const { stdout } = await this.executePipAudit(['-f', 'json'], cwd)
       const parsed = parseJson<any>(stdout, { dependencies: [], vulnerabilities: [] })
       return {
         issues: parsePipAuditIssues(parsed),
-        raw: stdout
+        raw: [repairOutput, stdout].filter(Boolean).join('\n')
       }
     } catch (error: any) {
+      if (isMissingToolError(error, 'pip_audit')) {
+        try {
+          const installOutput = await this.installTool('pip-audit', cwd)
+          const { stdout } = await this.executePipAudit(['-f', 'json'], cwd)
+          const parsed = parseJson<any>(stdout, { dependencies: [], vulnerabilities: [] })
+          return {
+            issues: parsePipAuditIssues(parsed),
+            raw: [repairOutput, installOutput, stdout].filter(Boolean).join('\n')
+          }
+        } catch (retryError: any) {
+          return {
+            issues: [],
+            raw: [repairOutput, retryError.stdout || retryError.stderr || ''].filter(Boolean).join('\n'),
+            error: retryError.stderr || retryError.message || 'pip-audit is not available'
+          }
+        }
+      }
       if (error.stdout) {
         const parsed = parseJson<any>(error.stdout, { dependencies: [], vulnerabilities: [] })
         const issues = parsePipAuditIssues(parsed)
         if (issues.length > 0) {
           return {
             issues,
-            raw: error.stdout
+            raw: [repairOutput, error.stdout].filter(Boolean).join('\n')
           }
         }
       }
       return {
         issues: [],
-        raw: error.stdout || error.stderr || '',
+        raw: [repairOutput, error.stdout || error.stderr || ''].filter(Boolean).join('\n'),
         error: error.stderr || error.message || 'pip-audit is not available'
       }
     }
   }
 
   async installTool(tool: 'pip-audit' | 'pipdeptree', cwd?: string): Promise<string> {
-    const { stdout, stderr } = await this.executePip(['install', '--upgrade', tool], cwd)
-    return stdout || stderr
+    return await this.installPythonTool(tool, cwd)
   }
 
-  async dependencyTree(cwd?: string): Promise<any> {
+  async dependencyTree(cwd?: string): Promise<PipDependencyTreeNode[]> {
     try {
       const { stdout } = await this.executePipDeptree(['--json-tree'], cwd)
-      return parseJson(stdout, [])
-    } catch {
+      return normalizePipTree(parseJson(stdout, []))
+    } catch (error: any) {
+      if (isMissingToolError(error, 'pipdeptree')) {
+        try {
+          await this.installTool('pipdeptree', cwd)
+          const { stdout } = await this.executePipDeptree(['--json-tree'], cwd)
+          return normalizePipTree(parseJson(stdout, []))
+        } catch {
+        }
+      }
       const packages = await this.list(cwd)
       const details = await Promise.all(packages.map(async (pkg) => this.show(pkg.name, cwd)))
       return details.filter(Boolean).map((detail) => ({
-        package_name: detail!.name,
-        installed_version: detail!.version,
+        name: detail!.name,
+        version: detail!.version,
         dependencies: parseRequires(detail!.requires).map((name) => ({
-          package_name: name,
-          installed_version: '',
+          name,
+          version: '',
           dependencies: []
         }))
       }))
@@ -374,6 +472,40 @@ export class PipService {
     return stdout || stderr
   }
 
+  async publish(args: PipPublishArgs): Promise<string> {
+    if (!args.cwd) {
+      throw new Error('Project path is required')
+    }
+
+    const output: string[] = []
+    output.push(await this.installPythonTool('twine', args.cwd))
+
+    if (args.buildBefore !== false) {
+      output.push(await this.installPythonTool('build', args.cwd))
+      const { stdout, stderr } = await this.executePythonModule('build', 'pyproject-build', [], args.cwd)
+      output.push(stdout || stderr)
+    }
+
+    const distDir = join(args.cwd, 'dist')
+    const files = (await readdir(distDir))
+      .filter((fileName) => /\.(whl|zip)$/.test(fileName) || fileName.endsWith('.tar.gz'))
+      .map((fileName) => join(distDir, fileName))
+
+    if (files.length === 0) {
+      throw new Error('dist 目录中没有可发布的 wheel 或源码包，请先构建项目')
+    }
+
+    const command = ['upload']
+    if (args.repositoryUrl) command.push('--repository-url', args.repositoryUrl)
+    if (args.username) command.push('-u', args.username)
+    if (args.password) command.push('-p', args.password)
+    command.push(...files)
+
+    const { stdout, stderr } = await this.executePythonModule('twine', 'twine', command, args.cwd)
+    output.push(stdout || stderr)
+    return output.filter(Boolean).join('\n')
+  }
+
   private normalizeOptions(options?: string | PipCommandOptions): PipCommandOptions {
     return typeof options === 'string' ? { cwd: options } : options || {}
   }
@@ -383,6 +515,10 @@ export class PipService {
   }
 
   private async executePipAudit(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
+    const configured = (await getToolchainConfig(cwd)).pip
+    const configuredCandidates = configured
+      ? await getConfiguredModuleCandidates(configured, 'pip_audit', process.platform === 'win32' ? 'pip-audit.exe' : 'pip-audit', args)
+      : []
     const candidates = process.platform === 'win32'
       ? [
           { bin: 'python.exe', args: ['-m', 'pip_audit', ...args] },
@@ -395,10 +531,14 @@ export class PipService {
           { bin: 'pip-audit', args }
         ]
 
-    return await this.executeExternalCandidates(candidates, cwd)
+    return await this.executeExternalCandidates([...configuredCandidates, ...candidates], cwd)
   }
 
   private async executePipDeptree(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
+    const configured = (await getToolchainConfig(cwd)).pip
+    const configuredCandidates = configured
+      ? await getConfiguredModuleCandidates(configured, 'pipdeptree', process.platform === 'win32' ? 'pipdeptree.exe' : 'pipdeptree', args)
+      : []
     const candidates = process.platform === 'win32'
       ? [
           { bin: 'python.exe', args: ['-m', 'pipdeptree', ...args] },
@@ -411,7 +551,119 @@ export class PipService {
           { bin: 'pipdeptree', args }
         ]
 
-    return await this.executeExternalCandidates(candidates, cwd)
+    return await this.executeExternalCandidates([...configuredCandidates, ...candidates], cwd)
+  }
+
+  private async executePythonModule(
+    moduleName: string,
+    executableName: string,
+    args: string[],
+    cwd?: string
+  ): Promise<{ stdout: string; stderr: string }> {
+    const configured = (await getToolchainConfig(cwd)).pip
+    const executable = process.platform === 'win32' && !executableName.endsWith('.exe')
+      ? `${executableName}.exe`
+      : executableName
+    const configuredCandidates = configured
+      ? await getConfiguredModuleCandidates(configured, moduleName, executable, args)
+      : []
+    const candidates = process.platform === 'win32'
+      ? [
+          { bin: 'python.exe', args: ['-m', moduleName, ...args] },
+          { bin: 'py.exe', args: ['-m', moduleName, ...args] },
+          { bin: executable, args }
+        ]
+      : [
+          { bin: 'python3', args: ['-m', moduleName, ...args] },
+          { bin: 'python', args: ['-m', moduleName, ...args] },
+          { bin: executableName, args }
+        ]
+
+    return await this.executeExternalCandidates([...configuredCandidates, ...candidates], cwd)
+  }
+
+  private async installPythonTool(tool: string, cwd?: string): Promise<string> {
+    const output: string[] = []
+
+    try {
+      const { stdout, stderr } = await this.executePip(['install', '--upgrade', tool], cwd)
+      return stdout || stderr
+    } catch (error: any) {
+      output.push(formatFailedPipStep(`安装/升级 ${tool}`, error))
+    }
+
+    try {
+      const { stdout, stderr } = await this.executePip(['install', '--upgrade', 'pip', 'setuptools', 'wheel'], cwd)
+      output.push(stdout || stderr)
+    } catch (error: any) {
+      output.push(formatFailedPipStep('升级 pip 基础工具', error))
+    }
+
+    const fallbackIndexes = [
+      {
+        label: 'PyPI 官方源',
+        args: ['--index-url', 'https://pypi.org/simple', '--trusted-host', 'pypi.org']
+      },
+      {
+        label: '清华 PyPI 镜像',
+        args: ['--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple', '--trusted-host', 'pypi.tuna.tsinghua.edu.cn']
+      },
+      {
+        label: '阿里云 PyPI 镜像',
+        args: ['--index-url', 'https://mirrors.aliyun.com/pypi/simple', '--trusted-host', 'mirrors.aliyun.com']
+      }
+    ]
+
+    for (const fallback of fallbackIndexes) {
+      try {
+        const { stdout, stderr } = await this.executePip(['install', '--upgrade', ...fallback.args, tool], cwd)
+        output.push(`使用${fallback.label}安装成功`)
+        output.push(stdout || stderr)
+        return output.filter(Boolean).join('\n')
+      } catch (error: any) {
+        output.push(formatFailedPipStep(`使用${fallback.label}安装 ${tool}`, error))
+      }
+    }
+
+    const message = output.filter(Boolean).join('\n') || `${tool} 安装失败`
+    const wrapped = new Error(message) as Error & { stdout?: string; stderr?: string }
+    wrapped.stdout = message
+    wrapped.stderr = message
+    throw wrapped
+  }
+
+  private async installWithFallbackIndexes(packageSpec: string, cwd?: string): Promise<string> {
+    try {
+      return await this.install({ packageName: packageSpec, cwd, upgrade: true })
+    } catch (error: any) {
+      const output = [formatFailedPipStep(`使用当前源安装/升级 ${packageSpec}`, error)]
+      const fallbackIndexes = [
+        { label: 'PyPI 官方源', indexUrl: 'https://pypi.org/simple', trustedHost: 'pypi.org' },
+        { label: '清华 PyPI 镜像', indexUrl: 'https://pypi.tuna.tsinghua.edu.cn/simple', trustedHost: 'pypi.tuna.tsinghua.edu.cn' },
+        { label: '阿里云 PyPI 镜像', indexUrl: 'https://mirrors.aliyun.com/pypi/simple', trustedHost: 'mirrors.aliyun.com' }
+      ]
+
+      for (const fallback of fallbackIndexes) {
+        try {
+          const result = await this.install({
+            packageName: packageSpec,
+            cwd,
+            upgrade: true,
+            indexUrl: fallback.indexUrl,
+            trustedHost: fallback.trustedHost
+          })
+          return [...output, `使用${fallback.label}安装成功`, result].filter(Boolean).join('\n')
+        } catch (retryError: any) {
+          output.push(formatFailedPipStep(`使用${fallback.label}安装/升级 ${packageSpec}`, retryError))
+        }
+      }
+
+      const message = output.filter(Boolean).join('\n')
+      const wrapped = new Error(message) as Error & { stdout?: string; stderr?: string }
+      wrapped.stdout = message
+      wrapped.stderr = message
+      throw wrapped
+    }
   }
 
   private async executeExternalCandidates(
@@ -428,7 +680,7 @@ export class PipService {
         })
       } catch (error: any) {
         lastError = error
-        if (error.code !== 'ENOENT') {
+        if (error.code !== 'ENOENT' && !isMissingToolError(error)) {
           throw error
         }
       }
@@ -525,6 +777,54 @@ function parseRequires(requires?: string): string[] {
     .filter(Boolean)
 }
 
+function normalizePipTree(items: any): PipDependencyTreeNode[] {
+  const list = Array.isArray(items) ? items : [items].filter(Boolean)
+  return list.map((item) => ({
+    name: item.name || item.package_name || item.key || '',
+    version: item.version || item.installed_version || item.latest_version || '',
+    dependencies: normalizePipTree(item.dependencies || item.children || item.required_dependencies || [])
+  })).filter((item) => item.name)
+}
+
+function parsePipCheckRepairActions(output: string): PipRepairAction[] {
+  const actions = new Map<string, PipRepairAction>()
+
+  for (const line of output.split(/\r?\n/)) {
+    const requirementMatch = line.match(/^(\S+)\s+.+?\s+has requirement\s+([^,]+),\s+but you have/i)
+    if (requirementMatch) {
+      const packageName = requirementMatch[1].trim()
+      const spec = requirementMatch[2].trim()
+      const label = `${packageName} -> ${spec}`
+      actions.set(label, { label, packageName, spec })
+      continue
+    }
+
+    const missingMatch = line.match(/^(\S+)\s+.+?\s+requires\s+([^,]+),\s+which is not installed/i)
+    if (missingMatch) {
+      const packageName = missingMatch[1].trim()
+      const spec = missingMatch[2].trim()
+      const label = `${packageName} -> ${spec}`
+      actions.set(label, { label, packageName, spec })
+    }
+  }
+
+  return [...actions.values()]
+}
+
+function formatFailedPipStep(step: string, error: any): string {
+  const detail = error?.stderr || error?.stdout || error?.message || 'unknown error'
+  return `${step}失败:\n${detail}`
+}
+
+function isMissingToolError(error: any, moduleName?: string): boolean {
+  const text = [error?.message, error?.stdout, error?.stderr].filter(Boolean).join('\n')
+  if (!text) return false
+  if (/No module named/i.test(text)) {
+    return moduleName ? text.includes(moduleName) : true
+  }
+  return /not recognized|not found|ENOENT|is not available/i.test(text)
+}
+
 function uniquePipResults(items: PipSearchResult[]): PipSearchResult[] {
   const seen = new Set<string>()
   return items.filter((item) => {
@@ -578,6 +878,39 @@ async function getConfiguredPipCandidates(configured: string, args: string[]): P
   const lowerName = basename(configured).toLowerCase()
   const prefix = lowerName.startsWith('python') || lowerName === 'py.exe' ? ['-m', 'pip'] : []
   return [{ bin: configured, args: [...prefix, ...args] }]
+}
+
+async function getConfiguredModuleCandidates(
+  configured: string,
+  moduleName: string,
+  executableName: string,
+  args: string[]
+): Promise<Array<{ bin: string; args: string[] }>> {
+  if (await isDirectory(configured)) {
+    return process.platform === 'win32'
+      ? [
+          { bin: join(configured, 'python.exe'), args: ['-m', moduleName, ...args] },
+          { bin: join(configured, 'py.exe'), args: ['-m', moduleName, ...args] },
+          { bin: join(configured, 'Scripts', executableName), args },
+          { bin: join(configured, executableName), args }
+        ]
+      : [
+          { bin: join(configured, 'python3'), args: ['-m', moduleName, ...args] },
+          { bin: join(configured, 'python'), args: ['-m', moduleName, ...args] },
+          { bin: join(configured, 'bin', executableName), args },
+          { bin: join(configured, executableName), args }
+        ]
+  }
+
+  const lowerName = basename(configured).toLowerCase()
+  if (lowerName.startsWith('python') || lowerName === 'py.exe') {
+    return [{ bin: configured, args: ['-m', moduleName, ...args] }]
+  }
+
+  const candidates = [{ bin: configured, args }]
+  const configuredDir = dirname(configured)
+  candidates.push({ bin: join(configuredDir, executableName), args })
+  return candidates
 }
 
 async function isDirectory(path: string): Promise<boolean> {

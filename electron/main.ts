@@ -1,6 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { NpmService, setNpmServiceWindow } from './services/npm'
 import { ProjectService } from './services/project'
 import { PublishService } from './services/publish'
@@ -8,11 +7,10 @@ import { SystemService } from './services/system'
 import { PipService } from './services/pip'
 import { MavenService } from './services/maven'
 import { TerminalService, setTerminalWindow } from './services/terminal'
-import { checkTools, openToolDownload, setToolPath } from './services/toolchain'
+import { checkTools, openToolDownload, setToolPath, clearToolPath, getProjectToolchainConfig, checkTool } from './services/toolchain'
 import { fileWatcher } from './services/watcher'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+const mainDir = __dirname
 
 let mainWindow: BrowserWindow | null = null
 const npmService = new NpmService()
@@ -27,7 +25,7 @@ function createWindow() {
   let iconPath: string;
   
   if (process.env.NODE_ENV === 'development') {
-    iconPath = join(__dirname, '../../icon.jpg');
+    iconPath = join(mainDir, '../../icon.jpg');
   } else {
     iconPath = join(process.resourcesPath, 'icon.jpg');
   }
@@ -40,7 +38,7 @@ function createWindow() {
     backgroundColor: '#1e1e1e',
     icon: iconPath,
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+      preload: join(mainDir, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true
     },
@@ -59,7 +57,7 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(join(__dirname, '../dist/index.html'))
+    mainWindow.loadFile(join(mainDir, '../dist/index.html'))
   }
 
   mainWindow.on('closed', () => {
@@ -205,6 +203,22 @@ function setupIpcHandlers() {
 
   ipcMain.handle('project:read-package', async (_, projectPath: string) => {
     return await projectService.readPackageJson(projectPath)
+  })
+
+  ipcMain.handle('project:toolchain-get', async (_, projectPath: string) => {
+    return await getProjectToolchainConfig(projectPath)
+  })
+
+  ipcMain.handle('project:toolchain-set', async (_, projectPath: string, tool, toolPath: string) => {
+    return await setToolPath(tool, toolPath, projectPath)
+  })
+
+  ipcMain.handle('project:toolchain-clear', async (_, projectPath: string, tool) => {
+    return await clearToolPath(tool, projectPath)
+  })
+
+  ipcMain.handle('project:toolchain-check', async (_, projectPath: string) => {
+    return await Promise.all(['npm', 'pip', 'maven'].map((tool) => checkTool(tool as any, projectPath)))
   })
 
   ipcMain.handle('publish:check', async (_, projectPath: string) => {
@@ -442,6 +456,10 @@ function setupIpcHandlers() {
     return await pipService.check(cwd)
   })
 
+  ipcMain.handle('pip:repair-check', async (_, cwd?: string) => {
+    return await pipService.repairCheck(cwd)
+  })
+
   ipcMain.handle('pip:config-list', async (_, scope?: any) => {
     return await pipService.configList(scope)
   })
@@ -482,6 +500,10 @@ function setupIpcHandlers() {
     return await pipService.dependencyTree(cwd)
   })
 
+  ipcMain.handle('pip:publish', async (_, args) => {
+    return await pipService.publish(args)
+  })
+
   ipcMain.handle('maven:detect', async (_, cwd: string) => {
     return await mavenService.detect(cwd)
   })
@@ -494,12 +516,16 @@ function setupIpcHandlers() {
     return await mavenService.tree(cwd)
   })
 
+  ipcMain.handle('maven:dependency-tree', async (_, cwd: string) => {
+    return await mavenService.dependencyTree(cwd)
+  })
+
   ipcMain.handle('maven:run-goal', async (_, cwd: string, goal: string) => {
     return await mavenService.runGoal(cwd, goal)
   })
 
-  ipcMain.handle('maven:search', async (_, query: string) => {
-    return await mavenService.search(query)
+  ipcMain.handle('maven:search', async (_, query: string, cwd?: string) => {
+    return await mavenService.search(query, cwd)
   })
 
   ipcMain.handle('maven:versions', async (_, groupId: string, artifactId: string) => {
@@ -528,6 +554,14 @@ function setupIpcHandlers() {
 
   ipcMain.handle('maven:set-mirror', async (_, id: string, url: string, mirrorOf?: string) => {
     return await mavenService.setMirror(id, url, mirrorOf)
+  })
+
+  ipcMain.handle('maven:set-server', async (_, id: string, username: string, password: string) => {
+    return await mavenService.setServer(id, username, password)
+  })
+
+  ipcMain.handle('maven:deploy', async (_, args) => {
+    return await mavenService.deploy(args)
   })
 
   ipcMain.handle('maven:security-audit', async (_, cwd: string) => {

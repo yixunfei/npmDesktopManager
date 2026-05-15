@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     versions: (packageName: string) => ipcRenderer.invoke('pip:versions', packageName),
     show: (packageName: string, cwd?: string) => ipcRenderer.invoke('pip:show', packageName, cwd),
     check: (cwd?: string) => ipcRenderer.invoke('pip:check', cwd),
+    repairCheck: (cwd?: string) => ipcRenderer.invoke('pip:repair-check', cwd),
     configList: (scope?: PipConfigScope) => ipcRenderer.invoke('pip:config-list', scope),
     configFile: (scope?: PipConfigScope) => ipcRenderer.invoke('pip:config-file', scope),
     backupConfig: (scope?: PipConfigScope) => ipcRenderer.invoke('pip:backup-config', scope),
@@ -84,15 +85,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cachePurge: () => ipcRenderer.invoke('pip:cache-purge'),
     audit: (cwd?: string) => ipcRenderer.invoke('pip:audit', cwd),
     installTool: (tool: 'pip-audit' | 'pipdeptree', cwd?: string) => ipcRenderer.invoke('pip:install-tool', tool, cwd),
-    dependencyTree: (cwd?: string) => ipcRenderer.invoke('pip:dependency-tree', cwd)
+    dependencyTree: (cwd?: string) => ipcRenderer.invoke('pip:dependency-tree', cwd),
+    publish: (args: PipPublishArgs) => ipcRenderer.invoke('pip:publish', args)
   },
 
   maven: {
     detect: (cwd: string) => ipcRenderer.invoke('maven:detect', cwd),
     list: (cwd: string) => ipcRenderer.invoke('maven:list', cwd),
     tree: (cwd: string) => ipcRenderer.invoke('maven:tree', cwd),
+    dependencyTree: (cwd: string) => ipcRenderer.invoke('maven:dependency-tree', cwd),
     runGoal: (cwd: string, goal: string) => ipcRenderer.invoke('maven:run-goal', cwd, goal),
-    search: (query: string) => ipcRenderer.invoke('maven:search', query),
+    search: (query: string, cwd?: string) => ipcRenderer.invoke('maven:search', query, cwd),
     versions: (groupId: string, artifactId: string) => ipcRenderer.invoke('maven:versions', groupId, artifactId),
     info: (cwd?: string) => ipcRenderer.invoke('maven:info', cwd),
     effectiveSettings: (cwd?: string) => ipcRenderer.invoke('maven:effective-settings', cwd),
@@ -100,6 +103,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     backupSettings: () => ipcRenderer.invoke('maven:backup-settings'),
     setLocalRepository: (repositoryPath: string) => ipcRenderer.invoke('maven:set-local-repository', repositoryPath),
     setMirror: (id: string, url: string, mirrorOf?: string) => ipcRenderer.invoke('maven:set-mirror', id, url, mirrorOf),
+    setServer: (id: string, username: string, password: string) => ipcRenderer.invoke('maven:set-server', id, username, password),
+    deploy: (args: MavenDeployArgs) => ipcRenderer.invoke('maven:deploy', args),
     securityAudit: (cwd: string) => ipcRenderer.invoke('maven:security-audit', cwd),
     goOffline: (cwd: string) => ipcRenderer.invoke('maven:go-offline', cwd),
     purgeLocalRepository: (cwd: string) => ipcRenderer.invoke('maven:purge-local-repository', cwd),
@@ -129,7 +134,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     readPackage: (projectPath: string) => ipcRenderer.invoke('project:read-package', projectPath),
     writePackage: (projectPath: string, content: any) => ipcRenderer.invoke('project:write-package', projectPath, content),
     getPackagePath: (projectPath: string) => ipcRenderer.invoke('project:get-package-path', projectPath),
-    getNodeModulesPath: (projectPath: string, packageName: string) => ipcRenderer.invoke('project:get-node-modules-path', projectPath, packageName)
+    getNodeModulesPath: (projectPath: string, packageName: string) => ipcRenderer.invoke('project:get-node-modules-path', projectPath, packageName),
+    toolchain: {
+      get: (projectPath: string) => ipcRenderer.invoke('project:toolchain-get', projectPath),
+      set: (projectPath: string, tool: ToolName, toolPath: string) => ipcRenderer.invoke('project:toolchain-set', projectPath, tool, toolPath),
+      clear: (projectPath: string, tool: ToolName) => ipcRenderer.invoke('project:toolchain-clear', projectPath, tool),
+      check: (projectPath: string) => ipcRenderer.invoke('project:toolchain-check', projectPath)
+    }
   },
   
   publish: {

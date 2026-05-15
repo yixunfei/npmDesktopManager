@@ -77,7 +77,7 @@ export class PublishService {
     if (access) command.push('--access', access)
     if (registry) command.push('--registry', registry)
     
-    const { stdout, stderr } = await runLoggedCommand(await resolveToolBin('npm'), command, {
+    const { stdout, stderr } = await runLoggedCommand(await resolveToolBin('npm', cwd), command, {
       cwd,
       maxBuffer: 1024 * 1024 * 10,
       displayBin: 'npm'

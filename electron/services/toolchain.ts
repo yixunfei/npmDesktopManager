@@ -32,16 +32,23 @@ const DEFAULT_BINS: Record<ToolName, string> = {
   maven: process.platform === 'win32' ? 'mvn.cmd' : 'mvn'
 }
 
-export async function getToolchainConfig(): Promise<ToolchainConfig> {
-  try {
-    return JSON.parse(await readFile(configPath(), 'utf-8'))
-  } catch {
-    return {}
+export async function getToolchainConfig(projectPath?: string): Promise<ToolchainConfig> {
+  const globalConfig = await readToolchainConfig(configPath())
+  if (!projectPath) {
+    return globalConfig
   }
+
+  const projectConfig = await readToolchainConfig(projectConfigPath(projectPath))
+  return { ...globalConfig, ...projectConfig }
 }
 
-export async function setToolPath(tool: ToolName, toolPath: string): Promise<ToolchainConfig> {
-  const config = await getToolchainConfig()
+export async function getProjectToolchainConfig(projectPath: string): Promise<ToolchainConfig> {
+  return await readToolchainConfig(projectConfigPath(projectPath))
+}
+
+export async function setToolPath(tool: ToolName, toolPath: string, projectPath?: string): Promise<ToolchainConfig> {
+  const targetPath = projectPath ? projectConfigPath(projectPath) : configPath()
+  const config = await readToolchainConfig(targetPath)
   const value = toolPath.trim()
   if (value) {
     config[tool] = value
@@ -49,13 +56,17 @@ export async function setToolPath(tool: ToolName, toolPath: string): Promise<Too
     delete config[tool]
   }
 
-  await mkdir(dirname(configPath()), { recursive: true })
-  await writeFile(configPath(), JSON.stringify(config, null, 2), 'utf-8')
+  await mkdir(dirname(targetPath), { recursive: true })
+  await writeFile(targetPath, JSON.stringify(config, null, 2), 'utf-8')
   return config
 }
 
-export async function resolveToolBin(tool: ToolName): Promise<string> {
-  const config = await getToolchainConfig()
+export async function clearToolPath(tool: ToolName, projectPath?: string): Promise<ToolchainConfig> {
+  return await setToolPath(tool, '', projectPath)
+}
+
+export async function resolveToolBin(tool: ToolName, projectPath?: string): Promise<string> {
+  const config = await getToolchainConfig(projectPath)
   const configuredPath = config[tool]
   if (!configuredPath) return DEFAULT_BINS[tool]
 
@@ -72,8 +83,8 @@ export async function resolveToolBin(tool: ToolName): Promise<string> {
   return configuredPath
 }
 
-export async function checkTool(tool: ToolName): Promise<ToolStatus> {
-  const config = await getToolchainConfig()
+export async function checkTool(tool: ToolName, projectPath?: string): Promise<ToolStatus> {
+  const config = await getToolchainConfig(projectPath)
   const configuredPath = config[tool]
   const candidates = await getCheckCandidates(tool, configuredPath)
 
@@ -110,8 +121,8 @@ export async function checkTool(tool: ToolName): Promise<ToolStatus> {
   }
 }
 
-export async function checkTools(): Promise<ToolStatus[]> {
-  return Promise.all(['npm', 'pip', 'maven'].map((tool) => checkTool(tool as ToolName)))
+export async function checkTools(projectPath?: string): Promise<ToolStatus[]> {
+  return Promise.all(['npm', 'pip', 'maven'].map((tool) => checkTool(tool as ToolName, projectPath)))
 }
 
 export async function openToolDownload(tool: ToolName): Promise<void> {
@@ -120,6 +131,18 @@ export async function openToolDownload(tool: ToolName): Promise<void> {
 
 function configPath(): string {
   return join(app.getPath('userData'), 'toolchain.json')
+}
+
+function projectConfigPath(projectPath: string): string {
+  return join(projectPath, '.npmDesktopManager', 'toolchain.json')
+}
+
+async function readToolchainConfig(path: string): Promise<ToolchainConfig> {
+  try {
+    return JSON.parse(await readFile(path, 'utf-8'))
+  } catch {
+    return {}
+  }
 }
 
 async function accessIfConfigured(toolPath?: string): Promise<void> {

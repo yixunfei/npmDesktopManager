@@ -1,0 +1,52 @@
+.container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-color, #cccccc);
+}
+
+.pathInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-secondary, #2d2d2d);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.pathLabel {
+  color: var(--text-secondary, #999);
+}
+
+.pathValue {
+  display: inline-block;
+  max-width: 420px;
+  overflow: hidden;
+  color: var(--primary-color, #1890ff);
+  font-family: 'Courier New', monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel {
+  background: var(--bg-secondary, #2d2d2d);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 8px;
+  padding: 16px;
+}
