@@ -189,7 +189,7 @@ export const usePackageStore = create<PackageState>()(
           }
           
           // 分批并行获取详情
-          const detailsMap = await fetchPackageDetailsBatch(allPackageNames, 10)
+          const detailsMap = await fetchPackageDetailsBatch([...new Set(allPackageNames)], 10)
           
           if (listResult.dependencies) {
             Object.entries(listResult.dependencies).forEach(([name, info]: [string, any]) => {
@@ -295,7 +295,7 @@ export const usePackageStore = create<PackageState>()(
           }
           
           // 分批并行获取详情
-          const detailsMap = await fetchPackageDetailsBatch(allPackageNames, 10)
+          const detailsMap = await fetchPackageDetailsBatch([...new Set(allPackageNames)], 10)
           
           if (listResult.dependencies) {
             Object.entries(listResult.dependencies).forEach(([name, info]: [string, any]) => {

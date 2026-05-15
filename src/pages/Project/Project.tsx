@@ -35,7 +35,7 @@ const ProjectPage: React.FC = () => {
   
   const currentPath = useAppStore((state) => state.currentPath)
   const addNotification = useAppStore((state) => state.addNotification)
-  const { projectPackages, loading, fetchProjectPackages, installPackage, uninstallPackage, updatePackage, installSpecificVersion } = usePackageStore()
+  const { projectPackages, loading, fetchProjectPackages, installPackage, uninstallPackage, installSpecificVersion } = usePackageStore()
   
   useEffect(() => {
     if (currentPath) {
@@ -95,13 +95,21 @@ const ProjectPage: React.FC = () => {
   }
   
   const loadPackageSizes = async () => {
-    const sizes: Record<string, any> = {}
-    for (const pkg of projectPackages.slice(0, 20)) {
-      try {
-        const size = await window.electronAPI.npm.getPackageSize(pkg.name, pkg.version)
-        sizes[pkg.name] = size
-      } catch {}
-    }
+    const entries = await Promise.all(
+      projectPackages.slice(0, 20).map(async (pkg) => {
+        if (pkg.size) {
+          return [pkg.name, { prettySize: pkg.size, fileCount: pkg.fileCount || 0 }] as const
+        }
+
+        try {
+          const size = await window.electronAPI.npm.getPackageSize(pkg.name, pkg.version)
+          return [pkg.name, size] as const
+        } catch {
+          return null
+        }
+      })
+    )
+    const sizes = Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, any]>)
     setPackageSizes(sizes)
   }
   
@@ -143,7 +151,7 @@ const ProjectPage: React.FC = () => {
     try {
       for (const packageName of selectedPackages) {
         try {
-          await updatePackage({
+          await window.electronAPI.npm.update({
             packageName,
             cwd: currentPath
           })
@@ -160,7 +168,7 @@ const ProjectPage: React.FC = () => {
       })
 
       setSelectedRowKeys([])
-      await fetchProjectPackages(currentPath)
+      await fetchProjectPackages(currentPath, true)
     } catch (error: any) {
       addNotification({
         type: 'error',
@@ -388,7 +396,7 @@ const ProjectPage: React.FC = () => {
         try {
           for (const packageName of selectedRowKeys) {
             try {
-              await uninstallPackage({
+              await window.electronAPI.npm.uninstall({
                 packageName: packageName as string,
                 cwd: currentPath
               })
@@ -405,7 +413,7 @@ const ProjectPage: React.FC = () => {
           })
 
           setSelectedRowKeys([])
-          await fetchProjectPackages(currentPath)
+          await fetchProjectPackages(currentPath, true)
         } catch (error: any) {
           addNotification({
             type: 'error',

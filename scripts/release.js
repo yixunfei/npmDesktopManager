@@ -34,16 +34,16 @@ function buildForCurrentPlatform() {
   
   const commands = {
     'win': [
-      { cmd: 'electron-builder --win --config.win.target=nsis', desc: 'Building Windows installer' },
-      { cmd: 'electron-builder --win --config.win.target=portable', desc: 'Building Windows portable' }
+      { cmd: 'electron-builder --win --config.win.target=nsis --publish never', desc: 'Building Windows installer' },
+      { cmd: 'electron-builder --win --config.win.target=portable --publish never', desc: 'Building Windows portable' }
     ],
     'mac': [
-      { cmd: 'electron-builder --mac --config.mac.target=dmg', desc: 'Building macOS DMG' },
-      { cmd: 'electron-builder --mac --config.mac.target=zip', desc: 'Building macOS ZIP' }
+      { cmd: 'electron-builder --mac --config.mac.target=dmg --publish never', desc: 'Building macOS DMG' },
+      { cmd: 'electron-builder --mac --config.mac.target=zip --publish never', desc: 'Building macOS ZIP' }
     ],
     'linux': [
-      { cmd: 'electron-builder --linux --config.linux.target=AppImage', desc: 'Building Linux AppImage' },
-      { cmd: 'electron-builder --linux --config.linux.target=deb', desc: 'Building Linux DEB' }
+      { cmd: 'electron-builder --linux --config.linux.target=AppImage --publish never', desc: 'Building Linux AppImage' },
+      { cmd: 'electron-builder --linux --config.linux.target=deb --publish never', desc: 'Building Linux DEB' }
     ]
   };
   

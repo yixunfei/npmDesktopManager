@@ -43,6 +43,15 @@ export default defineConfig({
   },
   base: './',
   build: {
-    outDir: 'dist'
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          antd: ['antd', '@ant-design/icons'],
+          state: ['zustand', 'semver']
+        }
+      }
+    }
   }
 })

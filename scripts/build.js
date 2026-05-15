@@ -54,6 +54,8 @@ function buildElectron() {
   } else if (type === 'all') {
     command += ' --config.win.target=nsis,portable --config.mac.target=dmg,zip --config.linux.target=AppImage,deb,rpm';
   }
+
+  command += ' --publish never';
   
   runCommand(command, `Packaging for ${platform} (${type})`);
 }

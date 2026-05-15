@@ -31,13 +31,17 @@ const SearchPage: React.FC = () => {
   }, [results])
   
   const loadPackageSizes = async () => {
-    const sizes: Record<string, any> = {}
-    for (const pkg of results.slice(0, 20)) {
-      try {
-        const size = await window.electronAPI.npm.getPackageSize(pkg.name, pkg.version)
-        sizes[pkg.name] = size
-      } catch {}
-    }
+    const entries = await Promise.all(
+      results.slice(0, 20).map(async (pkg) => {
+        try {
+          const size = await window.electronAPI.npm.getPackageSize(pkg.name, pkg.version)
+          return [pkg.name, size] as const
+        } catch {
+          return null
+        }
+      })
+    )
+    const sizes = Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, any]>)
     setPackageSizes(sizes)
   }
   

@@ -1,11 +1,15 @@
-import { exec, spawn } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import https from 'https'
 import { BrowserWindow } from 'electron'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
+const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 let mainWindow: BrowserWindow | null = null
+const CACHE_TTL = 10 * 60 * 1000
+const packageInfoCache = new Map<string, { expiresAt: number; value: any }>()
+const packageSizeCache = new Map<string, { expiresAt: number; value: any }>()
 
 export function setNpmServiceWindow(window: BrowserWindow | null) {
   mainWindow = window
@@ -27,6 +31,42 @@ function sendCommandLog(id: string, command: string, output?: string, error?: st
   }
 }
 
+function formatCommand(bin: string, args: string[]): string {
+  return [bin, ...args.map((arg) => /\s|"/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg)].join(' ')
+}
+
+function getCached<T>(cache: Map<string, { expiresAt: number; value: T }>, key: string): T | null {
+  const item = cache.get(key)
+  if (!item) return null
+  if (item.expiresAt < Date.now()) {
+    cache.delete(key)
+    return null
+  }
+  return item.value
+}
+
+function setCached<T>(cache: Map<string, { expiresAt: number; value: T }>, key: string, value: T): T {
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL })
+  return value
+}
+
+function parseJson(stdout: string, fallback: any = null): any {
+  if (!stdout.trim()) return fallback
+  try {
+    return JSON.parse(stdout)
+  } catch {
+    return fallback
+  }
+}
+
+function normalizePackageSpec(packageName: string, version?: string): string {
+  return version ? `${packageName}@${version}` : packageName
+}
+
+function registryPackageUrl(packageName: string, version = 'latest'): string {
+  return `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`
+}
+
 async function httpsGet(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
     https.get(url, (res) => {
@@ -38,60 +78,59 @@ async function httpsGet(url: string): Promise<string> {
 }
 
 export class NpmService {
-  private async execute(command: string, cwd?: string): Promise<{ stdout: string; stderr: string }> {
+  private async executeNpm(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
     const logId = Date.now().toString() + Math.random().toString(36).substr(2, 9)
+    const command = formatCommand('npm', args)
     
     sendCommandLog(logId, command, undefined, undefined, 'running')
     
     try {
-      const result = await execAsync(command, {
+      const result = await execFileAsync(NPM_BIN, args, {
         cwd: cwd || process.cwd(),
         maxBuffer: 1024 * 1024 * 10,
-        env: { ...process.env }
+        env: { ...process.env },
+        windowsHide: true
       })
       
       sendCommandLog(logId, command, result.stdout, result.stderr, 'success')
       return result
     } catch (error: any) {
       sendCommandLog(logId, command, error.stdout, error.stderr || error.message, 'error')
-      throw new Error(error.message || 'Command execution failed')
+      const wrapped = new Error(error.message || 'Command execution failed') as Error & { stdout?: string; stderr?: string; code?: number }
+      wrapped.stdout = error.stdout
+      wrapped.stderr = error.stderr
+      wrapped.code = error.code
+      throw wrapped
     }
   }
 
   async search(query: string): Promise<any[]> {
-    const { stdout } = await this.execute(`npm search ${query} --json --long`)
-    return JSON.parse(stdout)
+    const { stdout } = await this.executeNpm(['search', query, '--json', '--long'])
+    return parseJson(stdout, [])
   }
 
   async view(packageName: string): Promise<any> {
-    const { stdout } = await this.execute(`npm view ${packageName} --json`)
-    return JSON.parse(stdout)
+    const { stdout } = await this.executeNpm(['view', packageName, '--json'])
+    return parseJson(stdout, null)
   }
 
   async install(args: any): Promise<string> {
     const { packageName, cwd, global, dev, version } = args
-    let command = 'npm install'
+    const command = ['install', normalizePackageSpec(packageName, version)]
+    if (global) command.push('-g')
+    if (dev) command.push('--save-dev')
+    command.push('--legacy-peer-deps')
     
-    if (version) {
-      command += ` ${packageName}@${version}`
-    } else {
-      command += ` ${packageName}`
-    }
-    
-    if (global) command += ' -g'
-    if (dev) command += ' --save-dev'
-    command += ' --legacy-peer-deps'
-    
-    const { stdout, stderr } = await this.execute(command, cwd)
+    const { stdout, stderr } = await this.executeNpm(command, cwd)
     return stdout || stderr
   }
 
   async uninstall(args: any): Promise<string> {
     const { packageName, cwd, global } = args
-    let command = `npm uninstall ${packageName}`
-    if (global) command += ' -g'
+    const command = ['uninstall', packageName]
+    if (global) command.push('-g')
     
-    const { stdout, stderr } = await this.execute(command, cwd)
+    const { stdout, stderr } = await this.executeNpm(command, cwd)
     return stdout || stderr
   }
 
@@ -99,50 +138,51 @@ export class NpmService {
     const { packageName, cwd, global } = args
     
     if (packageName) {
-      let command = `npm install ${packageName}@latest --legacy-peer-deps`
-      if (global) command += ' -g'
+      const command = ['install', `${packageName}@latest`, '--legacy-peer-deps']
+      if (global) command.push('-g')
       
-      const { stdout, stderr } = await this.execute(command, cwd)
+      const { stdout, stderr } = await this.executeNpm(command, cwd)
       return stdout || stderr
     } else {
-      let command = 'npm update --legacy-peer-deps'
-      if (global) command += ' -g'
+      const command = ['update', '--legacy-peer-deps']
+      if (global) command.push('-g')
       
-      const { stdout, stderr } = await this.execute(command, cwd)
+      const { stdout, stderr } = await this.executeNpm(command, cwd)
       return stdout || stderr
     }
   }
 
   async outdated(cwd: string): Promise<any> {
     try {
-      const { stdout } = await this.execute('npm outdated --json', cwd)
-      return stdout ? JSON.parse(stdout) : {}
+      const { stdout } = await this.executeNpm(['outdated', '--json'], cwd)
+      return parseJson(stdout, {})
     } catch (error: any) {
       if (error.stdout) {
-        return JSON.parse(error.stdout)
+        return parseJson(error.stdout, {})
       }
       return {}
     }
   }
 
   async list(cwd: string, global: boolean): Promise<any> {
-    const command = `npm list --json --depth=0${global ? ' -g' : ''}`
-    const { stdout } = await this.execute(command, global ? undefined : cwd)
-    return JSON.parse(stdout)
+    const command = ['list', '--json', '--depth=0']
+    if (global) command.push('-g')
+    const { stdout } = await this.executeNpm(command, global ? undefined : cwd)
+    return parseJson(stdout, {})
   }
 
   async configList(): Promise<any> {
-    const { stdout } = await this.execute('npm config list --json')
-    return JSON.parse(stdout)
+    const { stdout } = await this.executeNpm(['config', 'list', '--json'])
+    return parseJson(stdout, {})
   }
 
   async configSet(key: string, value: string): Promise<void> {
-    await this.execute(`npm config set ${key} ${value}`)
+    await this.executeNpm(['config', 'set', key, value])
   }
 
   async whoami(): Promise<string> {
     try {
-      const { stdout } = await this.execute('npm whoami')
+      const { stdout } = await this.executeNpm(['whoami'])
       return stdout.trim()
     } catch (error) {
       return ''
@@ -156,9 +196,10 @@ export class NpmService {
         args.push('--registry', registry)
       }
       
-      const child = spawn('npm', args, {
+      const child = spawn(NPM_BIN, args, {
         stdio: 'inherit',
-        shell: true
+        shell: false,
+        windowsHide: true
       })
       
       child.on('close', (code) => {
@@ -169,20 +210,20 @@ export class NpmService {
   }
 
   async logout(registry?: string): Promise<void> {
-    let command = 'npm logout'
-    if (registry) command += ` --registry ${registry}`
-    await this.execute(command)
+    const command = ['logout']
+    if (registry) command.push('--registry', registry)
+    await this.executeNpm(command)
   }
 
   async runScript(cwd: string, script: string): Promise<string> {
-    const { stdout, stderr } = await this.execute(`npm run ${script}`, cwd)
+    const { stdout, stderr } = await this.executeNpm(['run', script], cwd)
     return stdout || stderr
   }
 
   async getScripts(cwd: string): Promise<string[]> {
     try {
-      const { stdout } = await this.execute('npm run --json', cwd)
-      const result = JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['pkg', 'get', 'scripts', '--json'], cwd)
+      const result = parseJson(stdout, {})
       return Object.keys(result || {})
     } catch (error) {
       return []
@@ -191,7 +232,7 @@ export class NpmService {
 
   async configGet(key: string): Promise<string> {
     try {
-      const { stdout } = await this.execute(`npm config get ${key}`)
+      const { stdout } = await this.executeNpm(['config', 'get', key])
       return stdout.trim()
     } catch (error) {
       return ''
@@ -199,11 +240,11 @@ export class NpmService {
   }
 
   async configDelete(key: string): Promise<void> {
-    await this.execute(`npm config delete ${key}`)
+    await this.executeNpm(['config', 'delete', key])
   }
 
   async configEdit(): Promise<void> {
-    await this.execute('npm config edit')
+    await this.executeNpm(['config', 'edit'])
   }
 
   async moveDependency(args: any): Promise<string> {
@@ -221,8 +262,8 @@ export class NpmService {
 
   async getPublishedPackages(username: string): Promise<any[]> {
     try {
-      const { stdout } = await this.execute(`npm search maintainer:${username} --json --long`)
-      return JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['search', `maintainer:${username}`, '--json', '--long'])
+      return parseJson(stdout, [])
     } catch (error) {
       return []
     }
@@ -233,9 +274,12 @@ export class NpmService {
   }
 
   async getPackageInfo(packageName: string): Promise<any> {
+    const cached = getCached(packageInfoCache, packageName)
+    if (cached) return cached
+
     try {
-      const { stdout } = await this.execute(`npm info ${packageName} --json`)
-      return JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['info', packageName, '--json'])
+      return setCached(packageInfoCache, packageName, parseJson(stdout, null))
     } catch (error) {
       return null
     }
@@ -243,8 +287,8 @@ export class NpmService {
 
   async getVersions(packageName: string): Promise<string[]> {
     try {
-      const { stdout } = await this.execute(`npm view ${packageName} versions --json`)
-      const versions = JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['view', packageName, 'versions', '--json'])
+      const versions = parseJson(stdout, [])
       return Array.isArray(versions) ? versions.reverse() : [versions]
     } catch (error) {
       return []
@@ -253,27 +297,22 @@ export class NpmService {
 
   async installVersion(args: any): Promise<string> {
     const { packageName, version, cwd, global, dev } = args
-    let command = `npm install ${packageName}@${version}`
+    const command = ['install', normalizePackageSpec(packageName, version)]
+    if (global) command.push('-g')
+    if (dev) command.push('--save-dev')
+    command.push('--legacy-peer-deps')
     
-    if (global) command += ' -g'
-    if (dev) command += ' --save-dev'
-    command += ' --legacy-peer-deps'
-    
-    const { stdout, stderr } = await this.execute(command, cwd)
+    const { stdout, stderr } = await this.executeNpm(command, cwd)
     return stdout || stderr
   }
 
   async globalOutdated(): Promise<any> {
     try {
-      const { stdout } = await this.execute('npm outdated -g --json')
-      return stdout ? JSON.parse(stdout) : {}
+      const { stdout } = await this.executeNpm(['outdated', '-g', '--json'])
+      return parseJson(stdout, {})
     } catch (error: any) {
       if (error.stdout) {
-        try {
-          return JSON.parse(error.stdout)
-        } catch {
-          return {}
-        }
+        return parseJson(error.stdout, {})
       }
       return {}
     }
@@ -286,9 +325,10 @@ export class NpmService {
         args.push('--registry', registry)
       }
       
-      const child = spawn('npm', args, {
-        stdio: 'inherit',
-        shell: true
+      const child = spawn(NPM_BIN, args, {
+          stdio: 'inherit',
+          shell: false,
+          windowsHide: true
       })
       
       child.on('close', (code) => {
@@ -312,21 +352,25 @@ export class NpmService {
   }
 
   async getPackageSize(packageName: string, version?: string): Promise<any> {
+    const cacheKey = `${packageName}@${version || 'latest'}`
+    const cached = getCached(packageSizeCache, cacheKey)
+    if (cached) return cached
+
     try {
       const pkgVersion = version || 'latest'
-      const url = `https://registry.npmjs.org/${packageName}/${pkgVersion}`
+      const url = registryPackageUrl(packageName, pkgVersion)
       const data = JSON.parse(await httpsGet(url))
       
       const dist = data.dist || {}
       const unpackedSize = dist.unpackedSize || 0
       const fileCount = dist.fileCount || 0
       
-      return {
+      return setCached(packageSizeCache, cacheKey, {
         unpackedSize,
         fileCount,
         packedSize: dist.tarball ? 'unknown' : 0,
         prettySize: formatBytes(unpackedSize)
-      }
+      })
     } catch (error) {
       return { unpackedSize: 0, fileCount: 0, prettySize: 'unknown' }
     }
@@ -335,8 +379,8 @@ export class NpmService {
   async getDependencyTree(packageName: string, version?: string, depth: number = 2): Promise<any> {
     try {
       const pkgVersion = version || 'latest'
-      const { stdout } = await this.execute(`npm view ${packageName}@${pkgVersion} dependencies --json`)
-      const dependencies = JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['view', normalizePackageSpec(packageName, pkgVersion), 'dependencies', '--json'])
+      const dependencies = parseJson(stdout, {})
       
       if (!dependencies || Object.keys(dependencies).length === 0) {
         return { name: packageName, version: pkgVersion, dependencies: [] }
@@ -367,12 +411,12 @@ export class NpmService {
 
   async audit(cwd: string): Promise<any> {
     try {
-      const { stdout } = await this.execute('npm audit --json', cwd)
-      return JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['audit', '--json'], cwd)
+      return parseJson(stdout, { vulnerabilities: {} })
     } catch (error: any) {
       if (error.stdout) {
         try {
-          return JSON.parse(error.stdout)
+          return parseJson(error.stdout, { vulnerabilities: {} })
         } catch {
           return { vulnerabilities: {} }
         }
@@ -382,13 +426,13 @@ export class NpmService {
   }
 
   async auditFix(cwd: string): Promise<string> {
-    const { stdout, stderr } = await this.execute('npm audit fix', cwd)
+    const { stdout, stderr } = await this.executeNpm(['audit', 'fix'], cwd)
     return stdout || stderr
   }
 
   async getPackageReadme(packageName: string): Promise<string> {
     try {
-      const data = JSON.parse(await httpsGet(`https://registry.npmjs.org/${packageName}/latest`))
+      const data = JSON.parse(await httpsGet(registryPackageUrl(packageName)))
       return data.readme || 'No README available'
     } catch (error) {
       return 'No README available'
@@ -415,12 +459,12 @@ export class NpmService {
 
   async getProjectDependencyTree(cwd: string, depth: number = 2): Promise<any> {
     try {
-      const { stdout } = await this.execute(`npm list --json --depth=${depth}`, cwd)
-      return JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['list', '--json', `--depth=${depth}`], cwd)
+      return parseJson(stdout, { dependencies: {} })
     } catch (error: any) {
       if (error.stdout) {
         try {
-          return JSON.parse(error.stdout)
+          return parseJson(error.stdout, { dependencies: {} })
         } catch {
           return { dependencies: {} }
         }
@@ -431,12 +475,12 @@ export class NpmService {
 
   async getGlobalDependencyTree(depth: number = 1): Promise<any> {
     try {
-      const { stdout } = await this.execute(`npm list -g --json --depth=${depth}`)
-      return JSON.parse(stdout)
+      const { stdout } = await this.executeNpm(['list', '-g', '--json', `--depth=${depth}`])
+      return parseJson(stdout, { dependencies: {} })
     } catch (error: any) {
       if (error.stdout) {
         try {
-          return JSON.parse(error.stdout)
+          return parseJson(error.stdout, { dependencies: {} })
         } catch {
           return { dependencies: {} }
         }

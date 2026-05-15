@@ -25,7 +25,7 @@ const GlobalPage: React.FC = () => {
   const [pendingUpdates, setPendingUpdates] = useState<PackageInfo[]>([])
   
   const addNotification = useAppStore((state) => state.addNotification)
-  const { globalPackages, loading, fetchGlobalPackages, installPackage, uninstallPackage, updatePackage, installSpecificVersion } = usePackageStore()
+  const { globalPackages, loading, fetchGlobalPackages, installPackage, uninstallPackage, installSpecificVersion } = usePackageStore()
   
   useEffect(() => {
     fetchGlobalPackages()
@@ -171,7 +171,7 @@ const GlobalPage: React.FC = () => {
     try {
       for (const packageName of selectedPackages) {
         try {
-          await updatePackage({
+          await window.electronAPI.npm.update({
             packageName,
             global: true
           })
@@ -188,7 +188,7 @@ const GlobalPage: React.FC = () => {
       })
 
       setSelectedRowKeys([])
-      await fetchGlobalPackages()
+      await fetchGlobalPackages(true)
     } catch (error: any) {
       addNotification({
         type: 'error',
@@ -260,7 +260,7 @@ const GlobalPage: React.FC = () => {
         try {
           for (const packageName of selectedRowKeys) {
             try {
-              await uninstallPackage({
+              await window.electronAPI.npm.uninstall({
                 packageName: packageName as string,
                 global: true
               })
@@ -277,7 +277,7 @@ const GlobalPage: React.FC = () => {
           })
 
           setSelectedRowKeys([])
-          await fetchGlobalPackages()
+          await fetchGlobalPackages(true)
         } catch (error: any) {
           addNotification({
             type: 'error',

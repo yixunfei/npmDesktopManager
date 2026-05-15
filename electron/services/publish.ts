@@ -1,9 +1,10 @@
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { access, readFile } from 'fs/promises'
 import { join } from 'path'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
+const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 export interface PublishCheckResult {
   canPublish: boolean
@@ -72,13 +73,17 @@ export class PublishService {
 
   async publish(args: any): Promise<string> {
     const { cwd, tag, access, registry } = args
-    let command = 'npm publish'
+    const command = ['publish']
     
-    if (tag) command += ` --tag ${tag}`
-    if (access) command += ` --access ${access}`
-    if (registry) command += ` --registry ${registry}`
+    if (tag) command.push('--tag', tag)
+    if (access) command.push('--access', access)
+    if (registry) command.push('--registry', registry)
     
-    const { stdout, stderr } = await execAsync(command, { cwd })
+    const { stdout, stderr } = await execFileAsync(NPM_BIN, command, {
+      cwd,
+      maxBuffer: 1024 * 1024 * 10,
+      windowsHide: true
+    })
     return stdout || stderr
   }
 }

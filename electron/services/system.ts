@@ -1,15 +1,23 @@
-import { exec } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
-import { app, shell } from 'electron'
-import { join } from 'path'
+import { app } from 'electron'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
+const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
+function run(bin: string, args: string[] = [], cwd?: string): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(bin, args, {
+    cwd,
+    maxBuffer: 1024 * 1024 * 10,
+    windowsHide: true
+  })
+}
 
 export class SystemService {
   async getNpmInfo(): Promise<any> {
     try {
-      const { stdout: npmVersion } = await execAsync('npm --version')
-      const { stdout: nodeVersion } = await execAsync('node --version')
+      const { stdout: npmVersion } = await run(NPM_BIN, ['--version'])
+      const { stdout: nodeVersion } = await run('node', ['--version'])
       
       return {
         npmVersion: npmVersion.trim(),
@@ -25,7 +33,7 @@ export class SystemService {
 
   async getCachePath(): Promise<string> {
     try {
-      const { stdout } = await execAsync('npm config get cache')
+      const { stdout } = await run(NPM_BIN, ['config', 'get', 'cache'])
       return stdout.trim()
     } catch (error) {
       return ''
@@ -33,17 +41,17 @@ export class SystemService {
   }
 
   async setCachePath(newPath: string): Promise<void> {
-    await execAsync(`npm config set cache ${newPath}`)
+    await run(NPM_BIN, ['config', 'set', 'cache', newPath])
   }
 
   async clearCache(): Promise<string> {
-    const { stdout, stderr } = await execAsync('npm cache clean --force')
+    const { stdout, stderr } = await run(NPM_BIN, ['cache', 'clean', '--force'])
     return stdout || stderr
   }
 
   async updateNpm(): Promise<string> {
     try {
-      const { stdout, stderr } = await execAsync('npm install -g npm@latest')
+      const { stdout, stderr } = await run(NPM_BIN, ['install', '-g', 'npm@latest'])
       return stdout || stderr
     } catch (error: any) {
       throw new Error(error.message)
@@ -52,11 +60,8 @@ export class SystemService {
 
   async npmHelp(command?: string): Promise<string> {
     try {
-      let cmd = 'npm help'
-      if (command) {
-        cmd = `npm help ${command}`
-      }
-      const { stdout } = await execAsync(cmd)
+      const args = command ? ['help', command] : ['help']
+      const { stdout } = await run(NPM_BIN, args)
       return stdout
     } catch (error: any) {
       return error.stdout || error.message
@@ -67,11 +72,11 @@ export class SystemService {
     const platform = process.platform
     
     if (platform === 'win32') {
-      await execAsync(`start cmd.exe /K "cd /d ${cwd}"`, { cwd })
+      spawn('cmd.exe', ['/K', 'cd', '/d', cwd], { cwd, detached: true, stdio: 'ignore', windowsHide: false }).unref()
     } else if (platform === 'darwin') {
-      await execAsync(`open -a Terminal.app "${cwd}"`, { cwd })
+      spawn('open', ['-a', 'Terminal.app', cwd], { cwd, detached: true, stdio: 'ignore' }).unref()
     } else if (platform === 'linux') {
-      await execAsync(`gnome-terminal --working-directory="${cwd}"`, { cwd })
+      spawn('gnome-terminal', [`--working-directory=${cwd}`], { cwd, detached: true, stdio: 'ignore' }).unref()
     }
   }
 }
