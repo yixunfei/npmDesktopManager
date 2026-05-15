@@ -5,6 +5,10 @@ import { NpmService, setNpmServiceWindow } from './services/npm'
 import { ProjectService } from './services/project'
 import { PublishService } from './services/publish'
 import { SystemService } from './services/system'
+import { PipService } from './services/pip'
+import { MavenService } from './services/maven'
+import { TerminalService, setTerminalWindow } from './services/terminal'
+import { checkTools, openToolDownload, setToolPath } from './services/toolchain'
 import { fileWatcher } from './services/watcher'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -15,6 +19,9 @@ const npmService = new NpmService()
 const projectService = new ProjectService()
 const publishService = new PublishService()
 const systemService = new SystemService()
+const pipService = new PipService()
+const mavenService = new MavenService()
+const terminalService = new TerminalService()
 
 function createWindow() {
   let iconPath: string;
@@ -46,6 +53,7 @@ function createWindow() {
   })
 
   setNpmServiceWindow(mainWindow)
+  setTerminalWindow(mainWindow)
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173')
@@ -57,6 +65,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
     setNpmServiceWindow(null as any)
+    setTerminalWindow(null)
+    terminalService.killAll()
   })
 }
 
@@ -241,6 +251,19 @@ function setupIpcHandlers() {
     return await systemService.npmHelp(command)
   })
 
+  ipcMain.handle('system:check-tools', async () => {
+    return await checkTools()
+  })
+
+  ipcMain.handle('system:set-tool-path', async (_, tool, toolPath: string) => {
+    await setToolPath(tool, toolPath)
+    return await checkTools()
+  })
+
+  ipcMain.handle('system:open-tool-download', async (_, tool) => {
+    return await openToolDownload(tool)
+  })
+
   ipcMain.handle('npm:run-script', async (_, cwd: string, script: string) => {
     return await npmService.runScript(cwd, script)
   })
@@ -325,6 +348,10 @@ function setupIpcHandlers() {
     return await npmService.audit(cwd)
   })
 
+  ipcMain.handle('npm:global-audit', async () => {
+    return await npmService.globalAudit()
+  })
+
   ipcMain.handle('npm:audit-fix', async (_, cwd: string) => {
     return await npmService.auditFix(cwd)
   })
@@ -361,5 +388,177 @@ function setupIpcHandlers() {
 
   ipcMain.handle('npm:get-global-dependency-tree', async (_, depth: number = 1) => {
     return await npmService.getGlobalDependencyTree(depth)
+  })
+
+  ipcMain.handle('pip:list', async (_, options?: any) => {
+    return await pipService.list(options)
+  })
+
+  ipcMain.handle('pip:outdated', async (_, options?: any) => {
+    return await pipService.outdated(options)
+  })
+
+  ipcMain.handle('pip:install', async (_, args) => {
+    return await pipService.install(args)
+  })
+
+  ipcMain.handle('pip:uninstall', async (_, args) => {
+    return await pipService.uninstall(args)
+  })
+
+  ipcMain.handle('pip:update', async (_, args) => {
+    return await pipService.update(args)
+  })
+
+  ipcMain.handle('pip:update-all', async (_, args) => {
+    return await pipService.updateAll(args)
+  })
+
+  ipcMain.handle('pip:freeze', async (_, cwd?: string) => {
+    return await pipService.freeze(cwd)
+  })
+
+  ipcMain.handle('pip:export-requirements', async (_, cwd: string) => {
+    return await pipService.exportRequirements(cwd)
+  })
+
+  ipcMain.handle('pip:read-requirements', async (_, cwd: string) => {
+    return await pipService.readRequirements(cwd)
+  })
+
+  ipcMain.handle('pip:search', async (_, query: string, cwd?: string) => {
+    return await pipService.search(query, cwd)
+  })
+
+  ipcMain.handle('pip:versions', async (_, packageName: string) => {
+    return await pipService.versions(packageName)
+  })
+
+  ipcMain.handle('pip:show', async (_, packageName: string, cwd?: string) => {
+    return await pipService.show(packageName, cwd)
+  })
+
+  ipcMain.handle('pip:check', async (_, cwd?: string) => {
+    return await pipService.check(cwd)
+  })
+
+  ipcMain.handle('pip:config-list', async (_, scope?: any) => {
+    return await pipService.configList(scope)
+  })
+
+  ipcMain.handle('pip:config-file', async (_, scope?: any) => {
+    return await pipService.configFile(scope)
+  })
+
+  ipcMain.handle('pip:backup-config', async (_, scope?: any) => {
+    return await pipService.backupConfig(scope)
+  })
+
+  ipcMain.handle('pip:config-set', async (_, scope: any, key: string, value: string) => {
+    return await pipService.configSet(scope, key, value)
+  })
+
+  ipcMain.handle('pip:config-unset', async (_, scope: any, key: string) => {
+    return await pipService.configUnset(scope, key)
+  })
+
+  ipcMain.handle('pip:cache-dir', async () => {
+    return await pipService.cacheDir()
+  })
+
+  ipcMain.handle('pip:cache-purge', async () => {
+    return await pipService.cachePurge()
+  })
+
+  ipcMain.handle('pip:audit', async (_, cwd?: string) => {
+    return await pipService.audit(cwd)
+  })
+
+  ipcMain.handle('pip:install-tool', async (_, tool: any, cwd?: string) => {
+    return await pipService.installTool(tool, cwd)
+  })
+
+  ipcMain.handle('pip:dependency-tree', async (_, cwd?: string) => {
+    return await pipService.dependencyTree(cwd)
+  })
+
+  ipcMain.handle('maven:detect', async (_, cwd: string) => {
+    return await mavenService.detect(cwd)
+  })
+
+  ipcMain.handle('maven:list', async (_, cwd: string) => {
+    return await mavenService.list(cwd)
+  })
+
+  ipcMain.handle('maven:tree', async (_, cwd: string) => {
+    return await mavenService.tree(cwd)
+  })
+
+  ipcMain.handle('maven:run-goal', async (_, cwd: string, goal: string) => {
+    return await mavenService.runGoal(cwd, goal)
+  })
+
+  ipcMain.handle('maven:search', async (_, query: string) => {
+    return await mavenService.search(query)
+  })
+
+  ipcMain.handle('maven:versions', async (_, groupId: string, artifactId: string) => {
+    return await mavenService.versions(groupId, artifactId)
+  })
+
+  ipcMain.handle('maven:info', async (_, cwd?: string) => {
+    return await mavenService.info(cwd)
+  })
+
+  ipcMain.handle('maven:effective-settings', async (_, cwd?: string) => {
+    return await mavenService.effectiveSettings(cwd)
+  })
+
+  ipcMain.handle('maven:ensure-settings', async () => {
+    return await mavenService.ensureSettings()
+  })
+
+  ipcMain.handle('maven:backup-settings', async () => {
+    return await mavenService.backupSettings()
+  })
+
+  ipcMain.handle('maven:set-local-repository', async (_, repositoryPath: string) => {
+    return await mavenService.setLocalRepository(repositoryPath)
+  })
+
+  ipcMain.handle('maven:set-mirror', async (_, id: string, url: string, mirrorOf?: string) => {
+    return await mavenService.setMirror(id, url, mirrorOf)
+  })
+
+  ipcMain.handle('maven:security-audit', async (_, cwd: string) => {
+    return await mavenService.securityAudit(cwd)
+  })
+
+  ipcMain.handle('maven:go-offline', async (_, cwd: string) => {
+    return await mavenService.goOffline(cwd)
+  })
+
+  ipcMain.handle('maven:purge-local-repository', async (_, cwd: string) => {
+    return await mavenService.purgeLocalRepository(cwd)
+  })
+
+  ipcMain.handle('maven:add-dependency', async (_, cwd: string, dep) => {
+    return await mavenService.addDependency(cwd, dep)
+  })
+
+  ipcMain.handle('maven:remove-dependency', async (_, cwd: string, dep) => {
+    return await mavenService.removeDependency(cwd, dep)
+  })
+
+  ipcMain.handle('terminal:create', async (_, cwd?: string) => {
+    return terminalService.create(cwd)
+  })
+
+  ipcMain.handle('terminal:write', async (_, id: string, data: string) => {
+    return terminalService.write(id, data)
+  })
+
+  ipcMain.handle('terminal:kill', async (_, id: string) => {
+    return terminalService.kill(id)
   })
 }

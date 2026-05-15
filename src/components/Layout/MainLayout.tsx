@@ -1,16 +1,20 @@
 import React, { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Layout, Menu, Switch, Tooltip } from 'antd'
+import { Layout, Menu, Segmented, Tooltip } from 'antd'
 import {
   SearchOutlined,
   FolderOutlined,
   GlobalOutlined,
+  CodeOutlined,
   CloudUploadOutlined,
   SettingOutlined,
+  DesktopOutlined,
   BulbOutlined,
-  BulbFilled
+  BulbFilled,
+  ApartmentOutlined
 } from '@ant-design/icons'
-import { useThemeStore } from '../../stores/themeStore'
+import { ThemeMode, useThemeStore } from '../../stores/themeStore'
+import { useResolvedTheme } from '../../hooks/useResolvedTheme'
 import styles from './MainLayout.module.css'
 
 const { Sider, Content, Footer } = Layout
@@ -22,13 +26,14 @@ interface MainLayoutProps {
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { mode, toggleMode } = useThemeStore()
+  const { mode, setMode } = useThemeStore()
+  const resolvedMode = useResolvedTheme(mode)
   
-  const isDark = mode === 'dark'
+  const isDark = resolvedMode === 'dark'
   
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', mode)
-  }, [mode])
+    document.documentElement.setAttribute('data-theme', resolvedMode)
+  }, [resolvedMode])
   
   const menuItems = [
     {
@@ -45,6 +50,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       key: '/global',
       icon: <GlobalOutlined />,
       label: '全局依赖'
+    },
+    {
+      key: '/pip',
+      icon: <CodeOutlined />,
+      label: 'pip 管理'
+    },
+    {
+      key: '/maven',
+      icon: <ApartmentOutlined />,
+      label: 'Maven 管理'
     },
     {
       key: '/publish',
@@ -99,12 +114,16 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           theme={isDark ? 'dark' : 'light'}
         />
         <div className={styles.themeSwitch}>
-          <Tooltip title={isDark ? '切换到亮色模式' : '切换到暗色模式'}>
-            <Switch
-              checked={isDark}
-              onChange={toggleMode}
-              checkedChildren={<BulbFilled />}
-              unCheckedChildren={<BulbOutlined />}
+          <Tooltip title="主题跟随系统、亮色或暗色">
+            <Segmented<ThemeMode>
+              size="small"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'system', icon: <DesktopOutlined /> },
+                { value: 'light', icon: <BulbOutlined /> },
+                { value: 'dark', icon: <BulbFilled /> }
+              ]}
             />
           </Tooltip>
         </div>

@@ -6,6 +6,8 @@ export interface ProjectInfo {
   name: string
   version: string
   hasPackageJson: boolean
+  hasRequirementsTxt: boolean
+  hasPomXml: boolean
   packageManager: 'npm' | 'yarn' | 'pnpm' | 'unknown'
 }
 
@@ -16,8 +18,13 @@ export class ProjectService {
       name: '',
       version: '',
       hasPackageJson: false,
+      hasRequirementsTxt: false,
+      hasPomXml: false,
       packageManager: 'npm'
     }
+
+    info.hasRequirementsTxt = await this.exists(join(projectPath, 'requirements.txt'))
+    info.hasPomXml = await this.exists(join(projectPath, 'pom.xml'))
 
     try {
       await access(join(projectPath, 'package.json'))

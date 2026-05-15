@@ -9,6 +9,7 @@ import {
   ThunderboltOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import styles from './Settings.module.css'
 
 const SettingsPage: React.FC = () => {
@@ -25,9 +26,12 @@ const SettingsPage: React.FC = () => {
   const [helpVisible, setHelpVisible] = useState(false)
   const [loginVisible, setLoginVisible] = useState(false)
   const [loginForm] = Form.useForm()
-  const [updateStrategy, setUpdateStrategy] = useState<string>('recommended')
-  const [conflictStrategy, setConflictStrategy] = useState<string>('prompt')
-  const [securitySensitivity, setSecuritySensitivity] = useState<string>('medium')
+  const updateStrategy = useSettingsStore((state) => state.updateStrategy)
+  const conflictStrategy = useSettingsStore((state) => state.conflictStrategy)
+  const securitySensitivity = useSettingsStore((state) => state.securitySensitivity)
+  const setUpdateStrategy = useSettingsStore((state) => state.setUpdateStrategy)
+  const setConflictStrategy = useSettingsStore((state) => state.setConflictStrategy)
+  const setSecuritySensitivity = useSettingsStore((state) => state.setSecuritySensitivity)
   
   const addNotification = useAppStore((state) => state.addNotification)
   
@@ -107,8 +111,9 @@ const SettingsPage: React.FC = () => {
   const handleLoginSubmit = async (values: any) => {
     setLoading(true)
     try {
+      const registryKey = getRegistryAuthTokenKey(values.registry || registry)
       if (values.authType === 'token') {
-        await window.electronAPI.npm.configSet('//registry.npmjs.org/:_authToken', values.token)
+        await window.electronAPI.npm.configSet(registryKey, values.token)
       } else if (values.authType === 'legacy') {
         await window.electronAPI.npm.adduser(values.registry || undefined)
       } else {
@@ -128,6 +133,16 @@ const SettingsPage: React.FC = () => {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const getRegistryAuthTokenKey = (registryUrl: string) => {
+    try {
+      const url = new URL(registryUrl)
+      const path = url.pathname.replace(/\/$/, '')
+      return `//${url.host}${path ? `${path}` : ''}/:_authToken`
+    } catch {
+      return '//registry.npmjs.org/:_authToken'
     }
   }
   
@@ -358,6 +373,16 @@ const SettingsPage: React.FC = () => {
                     <div style={{ color: '#888', fontSize: 12 }}>自动分析选择最佳版本，冲突时提示</div>
                   </div>
                 </Radio>
+                <Radio value="security">
+                  <div>
+                    <strong>安全优先更新</strong>
+                    <Space>
+                      <Tag color="red">安全优先</Tag>
+                      <Tag color="orange">可能存在兼容问题</Tag>
+                    </Space>
+                    <div style={{ color: '#888', fontSize: 12 }}>优先升级到可用的安全/最新版本，适合处理漏洞修复</div>
+                  </div>
+                </Radio>
                 <Radio value="latest">
                   <div>
                     <strong>最新更新</strong>
@@ -384,6 +409,12 @@ const SettingsPage: React.FC = () => {
                   <div>
                     <strong>自动选择推荐版本</strong>
                     <div style={{ color: '#888', fontSize: 12 }}>发现冲突时自动选择推荐版本（兼容性优先）</div>
+                  </div>
+                </Radio>
+                <Radio value="auto-security">
+                  <div>
+                    <strong>自动选择安全版本</strong>
+                    <div style={{ color: '#888', fontSize: 12 }}>发现安全更新冲突时优先选择安全版本</div>
                   </div>
                 </Radio>
               </Space>
@@ -420,7 +451,7 @@ const SettingsPage: React.FC = () => {
 
           <Alert
             message="提示"
-            description="设置将在下次更新时生效"
+            description="设置已自动保存，并将在下次更新预览与执行时生效"
             type="info"
             showIcon
           />

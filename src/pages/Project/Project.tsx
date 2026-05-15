@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Empty, Spin, Modal, Form, Input, Switch, Select, Tag, Dropdown, Space, Tooltip, Table, Tabs, Card } from 'antd'
+import { AutoComplete, Button, Empty, Spin, Modal, Form, Input, Switch, Select, Tag, Dropdown, Space, Tooltip, Table, Tabs, Card } from 'antd'
 import { ReloadOutlined, FolderOpenOutlined, PlusOutlined, SwapOutlined, FolderFilled, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, SyncOutlined, HistoryOutlined, SecurityScanOutlined, InfoCircleOutlined, DownloadOutlined, ApartmentOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { usePackageStore, PackageInfo } from '../../stores/packageStore'
+import { resolvePackageUpdateTarget, useSettingsStore } from '../../stores/settingsStore'
+import { useCommandLogStore } from '../../stores/commandLogStore'
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import { SecurityAuditModal } from '../../components/Package/SecurityAuditModal'
 import { DependencyTreeModal } from '../../components/Package/DependencyTreeModal'
@@ -32,9 +34,13 @@ const ProjectPage: React.FC = () => {
   const [previewVisible, setPreviewVisible] = useState(false)
   const [pendingUpdates, setPendingUpdates] = useState<PackageInfo[]>([])
   const [uninstallingSelected, setUninstallingSelected] = useState(false)
+  const [packageOptions, setPackageOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [installVersionOptions, setInstallVersionOptions] = useState<Array<{ value: string; label: string }>>([])
   
   const currentPath = useAppStore((state) => state.currentPath)
   const addNotification = useAppStore((state) => state.addNotification)
+  const updateStrategy = useSettingsStore((state) => state.updateStrategy)
+  const setTerminalVisible = useCommandLogStore((state) => state.setVisible)
   const { projectPackages, loading, fetchProjectPackages, installPackage, uninstallPackage, installSpecificVersion } = usePackageStore()
   
   useEffect(() => {
@@ -151,9 +157,12 @@ const ProjectPage: React.FC = () => {
     try {
       for (const packageName of selectedPackages) {
         try {
+          const pkg = pendingUpdates.find((item) => item.name === packageName)
+          const targetVersion = pkg ? resolvePackageUpdateTarget(pkg, updateStrategy) : undefined
           await window.electronAPI.npm.update({
             packageName,
-            cwd: currentPath
+            cwd: currentPath,
+            version: targetVersion
           })
           successCount++
         } catch {
@@ -277,18 +286,41 @@ const ProjectPage: React.FC = () => {
   }
   
   const handleOpenTerminal = async () => {
+    setTerminalVisible(true)
+    addNotification({
+      type: 'success',
+      message: '终端已打开',
+      description: currentPath
+    })
+  }
+
+  const searchInstallPackages = async (query: string) => {
+    if (!query.trim()) {
+      setPackageOptions([])
+      return
+    }
     try {
-      await window.electronAPI.system.openTerminal(currentPath)
-      addNotification({
-        type: 'success',
-        message: '终端已打开'
-      })
-    } catch (error: any) {
-      addNotification({
-        type: 'error',
-        message: '打开终端失败',
-        description: error.message
-      })
+      const result = await window.electronAPI.npm.search(query)
+      setPackageOptions(uniqueByName(result).slice(0, 10).map((pkg: any) => ({
+        value: pkg.name,
+        label: `${pkg.name}${pkg.version ? ` (${pkg.version})` : ''}`
+      })))
+    } catch {
+      setPackageOptions([])
+    }
+  }
+
+  const loadInstallVersions = async () => {
+    const packageName = installForm.getFieldValue('package')
+    if (!packageName) return
+    const rawName = String(packageName)
+    const versionMark = rawName.startsWith('@') ? rawName.indexOf('@', 1) : rawName.indexOf('@')
+    const name = versionMark > 0 ? rawName.slice(0, versionMark) : rawName
+    const versions = await window.electronAPI.npm.getVersions(name)
+    const options = versions.slice(0, 10).map((version) => ({ value: version, label: version }))
+    setInstallVersionOptions(options)
+    if (options[0]) {
+      installForm.setFieldValue('version', options[0].value)
     }
   }
   
@@ -783,10 +815,15 @@ const ProjectPage: React.FC = () => {
       >
         <Form form={installForm} onFinish={handleInstall} layout="vertical" initialValues={{ dev: false }}>
           <Form.Item name="package" label="包名" rules={[{ required: true, message: '请输入包名' }]}>
-            <Input placeholder="例如: lodash 或 lodash@4.17.21" />
+            <AutoComplete options={packageOptions} onSearch={searchInstallPackages} placeholder="例如: lodash" />
           </Form.Item>
-          <Form.Item name="version" label="版本（可选）">
-            <Input placeholder="例如: ^4.0.0 或 latest" />
+          <Form.Item label="版本（可选）">
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item name="version" noStyle>
+                <AutoComplete options={installVersionOptions} placeholder="默认 latest，或选择最近 10 个版本" style={{ width: '100%' }} />
+              </Form.Item>
+              <Button onClick={loadInstallVersions}>获取版本</Button>
+            </Space.Compact>
           </Form.Item>
           <Form.Item name="dev" label="作为开发依赖" valuePropName="checked">
             <Switch />
@@ -890,3 +927,13 @@ const ProjectPage: React.FC = () => {
 }
 
 export default ProjectPage
+
+function uniqueByName(packages: any[]): any[] {
+  const seen = new Set<string>()
+  return packages.filter((pkg) => {
+    const key = String(pkg.name || '').toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}

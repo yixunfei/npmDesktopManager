@@ -72,9 +72,31 @@ const PublishPage: React.FC = () => {
       message.error('请先检查项目并解决所有错误')
       return
     }
+
+    if (!values.version?.trim()) {
+      message.warning('请填写发布版本号')
+      return
+    }
     
     setLoading(true)
     try {
+      const publishVersion = values.version.trim()
+      if (packageJson && publishVersion !== checkResult.packageInfo.version) {
+        const updatedPackage = {
+          ...packageJson,
+          version: publishVersion
+        }
+        await window.electronAPI.project.writePackage(projectPath, updatedPackage)
+        setPackageJson(updatedPackage)
+        setCheckResult((prev: any) => prev ? {
+          ...prev,
+          packageInfo: {
+            ...prev.packageInfo,
+            version: publishVersion
+          }
+        } : prev)
+      }
+
       await window.electronAPI.publish.publish({
         cwd: projectPath,
         tag: values.tag,
@@ -84,7 +106,7 @@ const PublishPage: React.FC = () => {
       addNotification({
         type: 'success',
         message: '发布成功',
-        description: `${checkResult.packageInfo.name}@${checkResult.packageInfo.version} 已成功发布`
+        description: `${checkResult.packageInfo.name}@${publishVersion} 已成功发布`
       })
     } catch (error: any) {
       addNotification({
@@ -164,7 +186,7 @@ const PublishPage: React.FC = () => {
             title={
               <Space>
                 <span>检查结果</span>
-                {checkResult.canPublish && (
+                {checkResult.packageInfo && (
                   <Switch
                     checked={editMode}
                     onChange={setEditMode}
@@ -280,6 +302,15 @@ const PublishPage: React.FC = () => {
                     <Select.Option value="beta">beta</Select.Option>
                     <Select.Option value="alpha">alpha</Select.Option>
                   </Select>
+                </Form.Item>
+
+                <Form.Item
+                  name="version"
+                  label="发布版本号"
+                  rules={[{ required: true, message: '请输入版本号' }]}
+                  extra="发布前会写入 package.json"
+                >
+                  <Input placeholder="例如: 1.0.1" />
                 </Form.Item>
                 
                 <Form.Item name="access" label="访问权限">

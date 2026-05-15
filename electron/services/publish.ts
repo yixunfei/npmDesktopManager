@@ -1,10 +1,8 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { access, readFile } from 'fs/promises'
 import { join } from 'path'
+import { runLoggedCommand } from './commandRunner'
+import { resolveToolBin } from './toolchain'
 
-const execFileAsync = promisify(execFile)
-const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 export interface PublishCheckResult {
   canPublish: boolean
@@ -79,10 +77,10 @@ export class PublishService {
     if (access) command.push('--access', access)
     if (registry) command.push('--registry', registry)
     
-    const { stdout, stderr } = await execFileAsync(NPM_BIN, command, {
+    const { stdout, stderr } = await runLoggedCommand(await resolveToolBin('npm'), command, {
       cwd,
       maxBuffer: 1024 * 1024 * 10,
-      windowsHide: true
+      displayBin: 'npm'
     })
     return stdout || stderr
   }

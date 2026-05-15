@@ -3,11 +3,13 @@ import { Routes, Route } from 'react-router-dom'
 import MainLayout from './components/Layout/MainLayout'
 import { NotificationContainer } from './components/Notification/NotificationContainer'
 import CommandLogWindow from './components/CommandLog/CommandLogWindow'
+import ToolchainStatusModal from './components/Toolchain/ToolchainStatusModal'
 import { useAppStore } from './stores/appStore'
 
 const Search = lazy(() => import('./pages/Search/Search'))
 const Project = lazy(() => import('./pages/Project/Project'))
 const Global = lazy(() => import('./pages/Global/Global'))
+const MultiManager = lazy(() => import('./pages/MultiManager/MultiManager'))
 const Publish = lazy(() => import('./pages/Publish/Publish'))
 const Settings = lazy(() => import('./pages/Settings/Settings'))
 
@@ -26,6 +28,9 @@ const App: React.FC = () => {
             <Route path="/" element={<Search />} />
             <Route path="/project" element={<Project />} />
             <Route path="/global" element={<Global />} />
+            <Route path="/multi-manager" element={<MultiManager />} />
+            <Route path="/pip" element={<MultiManager initialManager="pip" />} />
+            <Route path="/maven" element={<MultiManager initialManager="maven" />} />
             <Route path="/publish" element={<Publish />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
@@ -33,6 +38,7 @@ const App: React.FC = () => {
       </MainLayout>
       <NotificationContainer />
       <CommandLogWindow />
+      <ToolchainStatusModal />
     </>
   )
 }

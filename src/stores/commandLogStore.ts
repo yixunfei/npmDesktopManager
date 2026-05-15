@@ -24,7 +24,7 @@ interface CommandLogState {
 export const useCommandLogStore = create<CommandLogState>((set) => ({
   logs: [],
   visible: false,
-  maxLogs: 100,
+  maxLogs: 200,
   
   addLog: (command: string, status: 'running' | 'success' | 'error' = 'running', output?: string, error?: string, id?: string) => {
     const logId = id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
@@ -43,9 +43,13 @@ export const useCommandLogStore = create<CommandLogState>((set) => ({
       
       if (existingIndex >= 0) {
         newLogs = [...state.logs]
-        newLogs[existingIndex] = newLog
+        newLogs[existingIndex] = {
+          ...newLogs[existingIndex],
+          ...newLog,
+          timestamp: newLogs[existingIndex].timestamp
+        }
       } else {
-        newLogs = [newLog, ...state.logs].slice(0, state.maxLogs)
+        newLogs = [...state.logs, newLog].slice(-state.maxLogs)
       }
       
       return { logs: newLogs }

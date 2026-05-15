@@ -1,10 +1,9 @@
 import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { app } from 'electron'
+import { resolveToolBin } from './toolchain'
 
 const execFileAsync = promisify(execFile)
-const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-
 function run(bin: string, args: string[] = [], cwd?: string): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync(bin, args, {
     cwd,
@@ -16,7 +15,8 @@ function run(bin: string, args: string[] = [], cwd?: string): Promise<{ stdout: 
 export class SystemService {
   async getNpmInfo(): Promise<any> {
     try {
-      const { stdout: npmVersion } = await run(NPM_BIN, ['--version'])
+      const npmBin = await resolveToolBin('npm')
+      const { stdout: npmVersion } = await run(npmBin, ['--version'])
       const { stdout: nodeVersion } = await run('node', ['--version'])
       
       return {
@@ -33,7 +33,7 @@ export class SystemService {
 
   async getCachePath(): Promise<string> {
     try {
-      const { stdout } = await run(NPM_BIN, ['config', 'get', 'cache'])
+      const { stdout } = await run(await resolveToolBin('npm'), ['config', 'get', 'cache'])
       return stdout.trim()
     } catch (error) {
       return ''
@@ -41,17 +41,17 @@ export class SystemService {
   }
 
   async setCachePath(newPath: string): Promise<void> {
-    await run(NPM_BIN, ['config', 'set', 'cache', newPath])
+    await run(await resolveToolBin('npm'), ['config', 'set', 'cache', newPath])
   }
 
   async clearCache(): Promise<string> {
-    const { stdout, stderr } = await run(NPM_BIN, ['cache', 'clean', '--force'])
+    const { stdout, stderr } = await run(await resolveToolBin('npm'), ['cache', 'clean', '--force'])
     return stdout || stderr
   }
 
   async updateNpm(): Promise<string> {
     try {
-      const { stdout, stderr } = await run(NPM_BIN, ['install', '-g', 'npm@latest'])
+      const { stdout, stderr } = await run(await resolveToolBin('npm'), ['install', '-g', 'npm@latest'])
       return stdout || stderr
     } catch (error: any) {
       throw new Error(error.message)
@@ -61,7 +61,7 @@ export class SystemService {
   async npmHelp(command?: string): Promise<string> {
     try {
       const args = command ? ['help', command] : ['help']
-      const { stdout } = await run(NPM_BIN, args)
+      const { stdout } = await run(await resolveToolBin('npm'), args)
       return stdout
     } catch (error: any) {
       return error.stdout || error.message

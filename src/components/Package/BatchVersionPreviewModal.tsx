@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Modal, Table, Checkbox, Space, Tag, Typography, Tooltip } from 'antd'
-import { InfoCircleOutlined, WarningOutlined } from '@ant-design/icons'
+import { InfoCircleOutlined, SafetyCertificateOutlined, WarningOutlined } from '@ant-design/icons'
 import { PackageInfo } from '../../stores/packageStore'
+import { resolvePackageUpdateTarget, useSettingsStore } from '../../stores/settingsStore'
 import semver from 'semver'
 
 const { Text } = Typography
@@ -16,6 +17,7 @@ interface BatchVersionPreviewModalProps {
 interface PreviewPackage extends PackageInfo {
   selected: boolean
   hasConflict?: boolean
+  targetVersion: string
   updateType: 'patch' | 'minor' | 'major' | 'unknown'
 }
 
@@ -26,17 +28,22 @@ export const BatchVersionPreviewModal: React.FC<BatchVersionPreviewModalProps> =
   onCancel
 }) => {
   const [previewPackages, setPreviewPackages] = useState<PreviewPackage[]>([])
+  const updateStrategy = useSettingsStore((state) => state.updateStrategy)
 
   useEffect(() => {
     if (visible && packages.length > 0) {
-      const preview = packages.map(pkg => ({
-        ...pkg,
-        selected: true,
-        updateType: getUpdateType(pkg.version, pkg.latest || pkg.version)
-      }))
+      const preview = packages.map(pkg => {
+        const targetVersion = resolvePackageUpdateTarget(pkg, updateStrategy) || pkg.version
+        return {
+          ...pkg,
+          selected: true,
+          targetVersion,
+          updateType: getUpdateType(pkg.version, targetVersion)
+        }
+      })
       setPreviewPackages(preview)
     }
-  }, [visible, packages])
+  }, [visible, packages, updateStrategy])
 
   const getUpdateType = (current: string, latest: string): 'patch' | 'minor' | 'major' | 'unknown' => {
     try {
@@ -58,13 +65,26 @@ export const BatchVersionPreviewModal: React.FC<BatchVersionPreviewModalProps> =
   const getUpdateTypeIcon = (type: string) => {
     switch (type) {
       case 'patch':
-        return <Tag color="green">🔧 补丁</Tag>
+        return <Tag color="green">补丁</Tag>
       case 'minor':
-        return <Tag color="blue">✨ 次要</Tag>
+        return <Tag color="blue">次要</Tag>
       case 'major':
-        return <Tag color="orange">⚠️ 主要</Tag>
+        return <Tag color="orange">主要</Tag>
       default:
         return <Tag color="default">未知</Tag>
+    }
+  }
+
+  const getStrategyTag = () => {
+    switch (updateStrategy) {
+      case 'security':
+        return <Tag color="red" icon={<SafetyCertificateOutlined />}>安全优先</Tag>
+      case 'latest':
+        return <Tag color="purple">最新</Tag>
+      case 'smart':
+        return <Tag color="blue">智能</Tag>
+      default:
+        return <Tag color="green">推荐</Tag>
     }
   }
 
@@ -135,8 +155,8 @@ export const BatchVersionPreviewModal: React.FC<BatchVersionPreviewModalProps> =
       key: 'targetVersion',
       width: 100,
       render: (_: any, record: PreviewPackage) => (
-        <Tag color={record.latest !== record.version ? 'blue' : 'green'}>
-          v{record.latest || record.version}
+        <Tag color={record.targetVersion !== record.version ? 'blue' : 'green'}>
+          v{record.targetVersion}
         </Tag>
       ),
     },
@@ -145,6 +165,12 @@ export const BatchVersionPreviewModal: React.FC<BatchVersionPreviewModalProps> =
       key: 'updateType',
       width: 100,
       render: (_: any, record: PreviewPackage) => getUpdateTypeIcon(record.updateType),
+    },
+    {
+      title: '策略',
+      key: 'strategy',
+      width: 110,
+      render: () => getStrategyTag(),
     },
     {
       title: '类型',
@@ -179,6 +205,7 @@ export const BatchVersionPreviewModal: React.FC<BatchVersionPreviewModalProps> =
       <div style={{ marginBottom: 16 }}>
         <Text type="secondary">
           请确认要更新的包，您可以取消勾选跳过特定包的更新。
+          {updateStrategy === 'security' ? ' 当前为安全优先策略，可能会选择更激进的目标版本。' : ''}
         </Text>
       </div>
       

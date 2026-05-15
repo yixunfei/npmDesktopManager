@@ -1,38 +1,16 @@
-import { execFile, spawn } from 'child_process'
-import { promisify } from 'util'
+import { spawn } from 'child_process'
 import https from 'https'
 import { BrowserWindow } from 'electron'
+import { runLoggedCommand } from './commandRunner'
+import { setCommandLogWindow } from './commandLogger'
+import { resolveToolBin } from './toolchain'
 
-const execFileAsync = promisify(execFile)
-const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-
-let mainWindow: BrowserWindow | null = null
 const CACHE_TTL = 10 * 60 * 1000
 const packageInfoCache = new Map<string, { expiresAt: number; value: any }>()
 const packageSizeCache = new Map<string, { expiresAt: number; value: any }>()
 
 export function setNpmServiceWindow(window: BrowserWindow | null) {
-  mainWindow = window
-}
-
-function sendCommandLog(id: string, command: string, output?: string, error?: string, status: 'running' | 'success' | 'error' = 'running') {
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('command-log', {
-        id,
-        timestamp: Date.now(),
-        command,
-        output: output ? output.substring(0, 5000) : undefined,
-        error: error ? error.substring(0, 5000) : undefined,
-        status
-      })
-    }
-  } catch (e) {
-  }
-}
-
-function formatCommand(bin: string, args: string[]): string {
-  return [bin, ...args.map((arg) => /\s|"/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg)].join(' ')
+  setCommandLogWindow(window)
 }
 
 function getCached<T>(cache: Map<string, { expiresAt: number; value: T }>, key: string): T | null {
@@ -79,23 +57,14 @@ async function httpsGet(url: string): Promise<string> {
 
 export class NpmService {
   private async executeNpm(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
-    const logId = Date.now().toString() + Math.random().toString(36).substr(2, 9)
-    const command = formatCommand('npm', args)
-    
-    sendCommandLog(logId, command, undefined, undefined, 'running')
-    
     try {
-      const result = await execFileAsync(NPM_BIN, args, {
-        cwd: cwd || process.cwd(),
+      return await runLoggedCommand(await resolveToolBin('npm'), args, {
+        cwd,
         maxBuffer: 1024 * 1024 * 10,
         env: { ...process.env },
-        windowsHide: true
+        displayBin: 'npm'
       })
-      
-      sendCommandLog(logId, command, result.stdout, result.stderr, 'success')
-      return result
     } catch (error: any) {
-      sendCommandLog(logId, command, error.stdout, error.stderr || error.message, 'error')
       const wrapped = new Error(error.message || 'Command execution failed') as Error & { stdout?: string; stderr?: string; code?: number }
       wrapped.stdout = error.stdout
       wrapped.stderr = error.stderr
@@ -135,10 +104,10 @@ export class NpmService {
   }
 
   async update(args: any): Promise<string> {
-    const { packageName, cwd, global } = args
+    const { packageName, cwd, global, version } = args
     
     if (packageName) {
-      const command = ['install', `${packageName}@latest`, '--legacy-peer-deps']
+      const command = ['install', normalizePackageSpec(packageName, version || 'latest'), '--legacy-peer-deps']
       if (global) command.push('-g')
       
       const { stdout, stderr } = await this.executeNpm(command, cwd)
@@ -190,15 +159,16 @@ export class NpmService {
   }
 
   async login(registry?: string): Promise<void> {
+    const npmBin = await resolveToolBin('npm')
     return new Promise((resolve, reject) => {
       const args = ['login']
       if (registry) {
         args.push('--registry', registry)
       }
       
-      const child = spawn(NPM_BIN, args, {
+      const child = spawn(npmBin, args, {
         stdio: 'inherit',
-        shell: false,
+        shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(npmBin),
         windowsHide: true
       })
       
@@ -319,15 +289,16 @@ export class NpmService {
   }
 
   async adduser(registry?: string): Promise<void> {
+    const npmBin = await resolveToolBin('npm')
     return new Promise((resolve, reject) => {
       const args = ['adduser']
       if (registry) {
         args.push('--registry', registry)
       }
       
-      const child = spawn(NPM_BIN, args, {
+      const child = spawn(npmBin, args, {
           stdio: 'inherit',
-          shell: false,
+          shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(npmBin),
           windowsHide: true
       })
       
@@ -425,9 +396,31 @@ export class NpmService {
     }
   }
 
+  async globalAudit(): Promise<any> {
+    try {
+      const { stdout } = await this.executeNpm(['audit', '-g', '--json'])
+      return parseJson(stdout, { vulnerabilities: {} })
+    } catch (error: any) {
+      if (error.stdout) {
+        return parseJson(error.stdout, { vulnerabilities: {} })
+      }
+      return {
+        vulnerabilities: {},
+        error: error.stderr || error.message || 'Global audit failed'
+      }
+    }
+  }
+
   async auditFix(cwd: string): Promise<string> {
-    const { stdout, stderr } = await this.executeNpm(['audit', 'fix'], cwd)
-    return stdout || stderr
+    try {
+      const { stdout, stderr } = await this.executeNpm(['audit', 'fix', '--legacy-peer-deps'], cwd)
+      return stdout || stderr
+    } catch (error: any) {
+      if (error.stdout || error.stderr) {
+        return [error.stdout, error.stderr].filter(Boolean).join('\n')
+      }
+      throw error
+    }
   }
 
   async getPackageReadme(packageName: string): Promise<string> {

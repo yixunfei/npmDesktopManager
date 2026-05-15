@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Empty, Spin, Modal, Form, Input, Tag, Dropdown, Space, Tooltip, Table } from 'antd'
-import { ReloadOutlined, PlusOutlined, SwapOutlined, FolderFilled, SyncOutlined, CheckCircleOutlined, WarningOutlined, HistoryOutlined, ApartmentOutlined, InfoCircleOutlined } from '@ant-design/icons'
+import { AutoComplete, Button, Empty, Spin, Modal, Form, Tag, Dropdown, Space, Tooltip, Table } from 'antd'
+import { ReloadOutlined, PlusOutlined, SwapOutlined, FolderFilled, SyncOutlined, CheckCircleOutlined, WarningOutlined, HistoryOutlined, ApartmentOutlined, InfoCircleOutlined, SecurityScanOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { usePackageStore, PackageInfo } from '../../stores/packageStore'
+import { resolvePackageUpdateTarget, useSettingsStore } from '../../stores/settingsStore'
 import { DependencyTreeModal } from '../../components/Package/DependencyTreeModal'
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import { BatchVersionPreviewModal } from '../../components/Package/BatchVersionPreviewModal'
+import { SecurityAuditModal } from '../../components/Package/SecurityAuditModal'
 import styles from './Global.module.css'
 
 const GlobalPage: React.FC = () => {
@@ -23,8 +25,12 @@ const GlobalPage: React.FC = () => {
   const [uninstallingSelected, setUninstallingSelected] = useState(false)
   const [previewVisible, setPreviewVisible] = useState(false)
   const [pendingUpdates, setPendingUpdates] = useState<PackageInfo[]>([])
+  const [auditVisible, setAuditVisible] = useState(false)
+  const [packageOptions, setPackageOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [installVersionOptions, setInstallVersionOptions] = useState<Array<{ value: string; label: string }>>([])
   
   const addNotification = useAppStore((state) => state.addNotification)
+  const updateStrategy = useSettingsStore((state) => state.updateStrategy)
   const { globalPackages, loading, fetchGlobalPackages, installPackage, uninstallPackage, installSpecificVersion } = usePackageStore()
   
   useEffect(() => {
@@ -100,6 +106,36 @@ const GlobalPage: React.FC = () => {
       })
     }
   }
+
+  const searchInstallPackages = async (query: string) => {
+    if (!query.trim()) {
+      setPackageOptions([])
+      return
+    }
+    try {
+      const result = await window.electronAPI.npm.search(query)
+      setPackageOptions(uniqueByName(result).slice(0, 10).map((pkg: any) => ({
+        value: pkg.name,
+        label: `${pkg.name}${pkg.version ? ` (${pkg.version})` : ''}`
+      })))
+    } catch {
+      setPackageOptions([])
+    }
+  }
+
+  const loadInstallVersions = async () => {
+    const packageName = installForm.getFieldValue('package')
+    if (!packageName) return
+    const rawName = String(packageName)
+    const versionMark = rawName.startsWith('@') ? rawName.indexOf('@', 1) : rawName.indexOf('@')
+    const name = versionMark > 0 ? rawName.slice(0, versionMark) : rawName
+    const versions = await window.electronAPI.npm.getVersions(name)
+    const options = versions.slice(0, 10).map((version) => ({ value: version, label: version }))
+    setInstallVersionOptions(options)
+    if (options[0]) {
+      installForm.setFieldValue('version', options[0].value)
+    }
+  }
   
   const handleShowVersions = async (pkg: PackageInfo) => {
     setSelectedPackage(pkg)
@@ -171,9 +207,12 @@ const GlobalPage: React.FC = () => {
     try {
       for (const packageName of selectedPackages) {
         try {
+          const pkg = pendingUpdates.find((item) => item.name === packageName)
+          const targetVersion = pkg ? resolvePackageUpdateTarget(pkg, updateStrategy) : undefined
           await window.electronAPI.npm.update({
             packageName,
-            global: true
+            global: true,
+            version: targetVersion
           })
           successCount++
         } catch {
@@ -459,6 +498,9 @@ const GlobalPage: React.FC = () => {
           >
             依赖树
           </Button>
+          <Button icon={<SecurityScanOutlined />} onClick={() => setAuditVisible(true)}>
+            安全审计
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
             刷新
           </Button>
@@ -492,10 +534,15 @@ const GlobalPage: React.FC = () => {
       >
         <Form form={installForm} onFinish={handleInstall} layout="vertical">
           <Form.Item name="package" label="包名" rules={[{ required: true, message: '请输入包名' }]}>
-            <Input placeholder="例如: typescript 或 typescript@5.0.0" />
+            <AutoComplete options={packageOptions} onSearch={searchInstallPackages} placeholder="例如: typescript" />
           </Form.Item>
-          <Form.Item name="version" label="版本（可选）">
-            <Input placeholder="例如: ^5.0.0 或 latest" />
+          <Form.Item label="版本（可选）">
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item name="version" noStyle>
+                <AutoComplete options={installVersionOptions} placeholder="默认 latest，或选择最近 10 个版本" style={{ width: '100%' }} />
+              </Form.Item>
+              <Button onClick={loadInstallVersions}>获取版本</Button>
+            </Space.Compact>
           </Form.Item>
         </Form>
       </Modal>
@@ -546,8 +593,24 @@ const GlobalPage: React.FC = () => {
         onConfirm={executeUpdate}
         onCancel={() => setPreviewVisible(false)}
       />
+
+      <SecurityAuditModal
+        visible={auditVisible}
+        scope="global"
+        onClose={() => setAuditVisible(false)}
+      />
     </div>
   )
 }
 
 export default GlobalPage
+
+function uniqueByName(packages: any[]): any[] {
+  const seen = new Set<string>()
+  return packages.filter((pkg) => {
+    const key = String(pkg.name || '').toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}

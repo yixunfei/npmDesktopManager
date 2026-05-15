@@ -70,6 +70,7 @@ interface UpdateArgs {
   packageName?: string
   cwd?: string
   global?: boolean
+  version?: string
 }
 
 interface InstallVersionArgs {
@@ -210,6 +211,7 @@ export const usePackageStore = create<PackageState>()(
                 name,
                 version: currentVersion,
                 type: 'dependencies' as const,
+                wanted: outdated?.wanted,
                 latest: latestVersion,
                 outdated: isOutdated,
                 description: details?.description || '',
@@ -240,6 +242,7 @@ export const usePackageStore = create<PackageState>()(
                 name,
                 version: currentVersion,
                 type: 'devDependencies' as const,
+                wanted: outdated?.wanted,
                 latest: latestVersion,
                 outdated: isOutdated,
                 description: details?.description || '',
@@ -315,6 +318,7 @@ export const usePackageStore = create<PackageState>()(
               packages.push({
                 name,
                 version: currentVersion,
+                wanted: outdated?.wanted,
                 latest: latestVersion,
                 outdated: isOutdated,
                 description: details?.description || '',
