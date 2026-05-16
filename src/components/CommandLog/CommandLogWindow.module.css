@@ -239,6 +239,14 @@
   border-left-color: #ff4d4f;
 }
 
+.clickableLog {
+  cursor: pointer;
+}
+
+.clickableLog:hover {
+  border-color: #3b82f6;
+}
+
 .logHeader {
   display: flex;
   align-items: center;

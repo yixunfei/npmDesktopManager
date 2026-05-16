@@ -377,7 +377,7 @@ const SettingsPage: React.FC = () => {
         <div className={styles.tabContent}>
           <Descriptions bordered column={1}>
             <Descriptions.Item label={t('settings.language')}>
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Select<AppLanguage>
                   value={language}
                   onChange={(value) => setLanguage(value)}
@@ -409,7 +409,7 @@ const SettingsPage: React.FC = () => {
           <div style={{ marginBottom: 24 }}>
             <h4 style={{ marginBottom: 16 }}>更新策略</h4>
             <Radio.Group value={updateStrategy} onChange={(e) => setUpdateStrategy(e.target.value)}>
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Radio value="recommended">
                   <div>
                     <strong>推荐更新</strong>
@@ -451,7 +451,7 @@ const SettingsPage: React.FC = () => {
           <div style={{ marginBottom: 24 }}>
             <h4 style={{ marginBottom: 16 }}>冲突处理策略</h4>
             <Radio.Group value={conflictStrategy} onChange={(e) => setConflictStrategy(e.target.value)}>
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Radio value="prompt">
                   <div>
                     <strong>总是提示</strong>
@@ -479,7 +479,7 @@ const SettingsPage: React.FC = () => {
           <div style={{ marginBottom: 24 }}>
             <h4 style={{ marginBottom: 16 }}>安全更新敏感度</h4>
             <Radio.Group value={securitySensitivity} onChange={(e) => setSecuritySensitivity(e.target.value)}>
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space orientation="vertical" style={{ width: '100%' }}>
                 <Radio value="high">
                   <div>
                     <strong>高</strong>
@@ -721,7 +721,7 @@ const SettingsPage: React.FC = () => {
       icon: <QuestionCircleOutlined />,
       children: (
         <div className={styles.tabContent}>
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Button onClick={() => handleShowHelp()}>查看 npm 帮助</Button>
             <Button onClick={() => handleShowHelp('install')}>npm install 帮助</Button>
             <Button onClick={() => handleShowHelp('publish')}>npm publish 帮助</Button>
@@ -750,6 +750,7 @@ const SettingsPage: React.FC = () => {
           open={configEditVisible}
           onCancel={() => setConfigEditVisible(false)}
           onOk={() => configForm.submit()}
+        forceRender
         >
           <Form form={configForm} onFinish={handleSaveConfig} layout="vertical">
             <Form.Item name="key" label="配置项" rules={[{ required: true }]}>
@@ -766,6 +767,7 @@ const SettingsPage: React.FC = () => {
           open={loginVisible}
           onCancel={() => setLoginVisible(false)}
           onOk={() => loginForm.submit()}
+        forceRender
         >
           <Form form={loginForm} onFinish={handleLoginSubmit} layout="vertical" initialValues={{ authType: 'interactive' }}>
             <Form.Item name="authType" label="认证方式" rules={[{ required: true }]}>

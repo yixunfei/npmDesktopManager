@@ -5,8 +5,13 @@ import { DownloadOutlined, FolderOpenOutlined, ReloadOutlined, SaveOutlined, Set
 const toolLabels: Record<ToolName, string> = {
   npm: 'npm / Node.js',
   pip: 'pip / Python',
-  maven: 'Maven'
+  maven: 'Maven',
+  cargo: 'Cargo / Rust',
+  gradle: 'Gradle',
+  go: 'Go'
 }
+
+const startupRequiredTools: ToolName[] = ['npm', 'pip', 'maven']
 
 const ToolchainStatusModal: React.FC = () => {
   const [statuses, setStatuses] = useState<ToolStatus[]>([])
@@ -18,7 +23,10 @@ const ToolchainStatusModal: React.FC = () => {
     checkTools()
   }, [])
 
-  const unavailable = useMemo(() => statuses.filter((item) => !item.available), [statuses])
+  const unavailable = useMemo(
+    () => statuses.filter((item) => startupRequiredTools.includes(item.tool) && !item.available),
+    [statuses]
+  )
 
   const checkTools = async () => {
     if (!window.electronAPI?.system?.checkTools) return
@@ -27,7 +35,7 @@ const ToolchainStatusModal: React.FC = () => {
       const result = await window.electronAPI.system.checkTools()
       setStatuses(result)
       setPaths(Object.fromEntries(result.map((item) => [item.tool, item.configuredPath || ''])))
-      setVisible(result.some((item) => !item.available))
+      setVisible(result.some((item) => startupRequiredTools.includes(item.tool) && !item.available))
     } finally {
       setLoading(false)
     }
@@ -38,7 +46,7 @@ const ToolchainStatusModal: React.FC = () => {
     try {
       const result = await window.electronAPI.system.setToolPath(tool, paths[tool] || '')
       setStatuses(result)
-      setVisible(result.some((item) => !item.available))
+      setVisible(result.some((item) => startupRequiredTools.includes(item.tool) && !item.available))
     } finally {
       setLoading(false)
     }
@@ -52,7 +60,7 @@ const ToolchainStatusModal: React.FC = () => {
     try {
       const result = await window.electronAPI.system.setToolPath(tool, directory)
       setStatuses(result)
-      setVisible(result.some((item) => !item.available))
+      setVisible(result.some((item) => startupRequiredTools.includes(item.tool) && !item.available))
     } finally {
       setLoading(false)
     }

@@ -8,6 +8,10 @@ export interface ProjectInfo {
   hasPackageJson: boolean
   hasRequirementsTxt: boolean
   hasPomXml: boolean
+  hasCargoToml: boolean
+  hasGradleBuild: boolean
+  hasGoMod: boolean
+  ecosystems: string[]
   packageManager: 'npm' | 'yarn' | 'pnpm' | 'unknown'
 }
 
@@ -20,11 +24,21 @@ export class ProjectService {
       hasPackageJson: false,
       hasRequirementsTxt: false,
       hasPomXml: false,
+      hasCargoToml: false,
+      hasGradleBuild: false,
+      hasGoMod: false,
+      ecosystems: [],
       packageManager: 'npm'
     }
 
     info.hasRequirementsTxt = await this.exists(join(projectPath, 'requirements.txt'))
     info.hasPomXml = await this.exists(join(projectPath, 'pom.xml'))
+    info.hasCargoToml = await this.exists(join(projectPath, 'Cargo.toml'))
+    info.hasGradleBuild = await this.exists(join(projectPath, 'build.gradle'))
+      || await this.exists(join(projectPath, 'build.gradle.kts'))
+      || await this.exists(join(projectPath, 'settings.gradle'))
+      || await this.exists(join(projectPath, 'settings.gradle.kts'))
+    info.hasGoMod = await this.exists(join(projectPath, 'go.mod'))
 
     try {
       await access(join(projectPath, 'package.json'))
@@ -44,6 +58,15 @@ export class ProjectService {
     } catch (error) {
       info.hasPackageJson = false
     }
+
+    info.ecosystems = [
+      info.hasPackageJson ? 'npm' : '',
+      info.hasRequirementsTxt ? 'pip' : '',
+      info.hasPomXml ? 'maven' : '',
+      info.hasCargoToml ? 'cargo' : '',
+      info.hasGradleBuild ? 'gradle' : '',
+      info.hasGoMod ? 'go' : ''
+    ].filter(Boolean)
 
     return info
   }

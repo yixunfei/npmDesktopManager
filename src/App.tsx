@@ -13,9 +13,13 @@ const ManagerHub = lazy(() => import('./pages/ManagerHub/ManagerHub'))
 const Project = lazy(() => import('./pages/Project/Project'))
 const Global = lazy(() => import('./pages/Global/Global'))
 const MultiManager = lazy(() => import('./pages/MultiManager/MultiManager'))
+const Cargo = lazy(() => import('./pages/Cargo/Cargo'))
+const Gradle = lazy(() => import('./pages/Gradle/Gradle'))
+const Go = lazy(() => import('./pages/Go/Go'))
 const Publish = lazy(() => import('./pages/Publish/Publish'))
 const Settings = lazy(() => import('./pages/Settings/Settings'))
 const ToolVersions = lazy(() => import('./pages/ToolVersions/ToolVersions'))
+const PluginComponents = lazy(() => import('./pages/PluginComponents/PluginComponents'))
 
 const App: React.FC = () => {
   const initCurrentPath = useAppStore((state) => state.initCurrentPath)
@@ -40,8 +44,12 @@ const App: React.FC = () => {
             <Route path="/npm" element={<MultiManager initialManager="npm" />} />
             <Route path="/pip" element={<MultiManager initialManager="pip" />} />
             <Route path="/maven" element={<MultiManager initialManager="maven" />} />
+            <Route path="/cargo" element={<Cargo />} />
+            <Route path="/gradle" element={<Gradle />} />
+            <Route path="/go" element={<Go />} />
             <Route path="/publish" element={<Publish />} />
             <Route path="/tool-versions" element={<ToolVersions />} />
+            <Route path="/plugins" element={<PluginComponents />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Suspense>

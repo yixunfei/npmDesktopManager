@@ -572,6 +572,7 @@ const GlobalPage: React.FC = () => {
         onOk={() => installForm.submit()}
         okText="安装"
         cancelText="取消"
+      forceRender
       >
         <Form form={installForm} onFinish={handleInstall} layout="vertical">
           <Form.Item name="package" label="包名" rules={[{ required: true, message: '请输入包名' }]}>

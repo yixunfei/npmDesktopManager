@@ -117,6 +117,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeDependency: (cwd: string, dep: Pick<MavenDependencyArgs, 'groupId' | 'artifactId'>) => ipcRenderer.invoke('maven:remove-dependency', cwd, dep)
   },
 
+  plugins: {
+    catalog: (projectPath?: string) => ipcRenderer.invoke('plugins:catalog', projectPath),
+    setEnabled: (id: PackageManagerId, enabled: boolean, projectPath?: string) => ipcRenderer.invoke('plugins:set-enabled', id, enabled, projectPath),
+    detected: (projectPath: string) => ipcRenderer.invoke('plugins:detected', projectPath)
+  },
+
+  cargo: {
+    detect: (cwd: string) => ipcRenderer.invoke('cargo:detect', cwd),
+    list: (cwd: string) => ipcRenderer.invoke('cargo:list', cwd),
+    search: (query: string) => ipcRenderer.invoke('cargo:search', query),
+    versions: (packageName: string) => ipcRenderer.invoke('cargo:versions', packageName),
+    install: (args: CargoInstallArgs) => ipcRenderer.invoke('cargo:install', args),
+    uninstall: (args: CargoPackageArgs) => ipcRenderer.invoke('cargo:uninstall', args),
+    update: (args: { packageName?: string; cwd: string }) => ipcRenderer.invoke('cargo:update', args),
+    tree: (cwd: string) => ipcRenderer.invoke('cargo:tree', cwd),
+    audit: (cwd: string) => ipcRenderer.invoke('cargo:audit', cwd),
+    run: (cwd: string, commandLine: string) => ipcRenderer.invoke('cargo:run', cwd, commandLine)
+  },
+
+  gradle: {
+    detect: (cwd: string) => ipcRenderer.invoke('gradle:detect', cwd),
+    list: (cwd: string) => ipcRenderer.invoke('gradle:list', cwd),
+    search: (query: string) => ipcRenderer.invoke('gradle:search', query),
+    versions: (groupId: string, artifactId: string) => ipcRenderer.invoke('gradle:versions', groupId, artifactId),
+    addDependency: (args: GradleDependencyArgs) => ipcRenderer.invoke('gradle:add-dependency', args),
+    updateDependency: (args: GradleDependencyArgs) => ipcRenderer.invoke('gradle:update-dependency', args),
+    removeDependency: (args: GradleRemoveDependencyArgs) => ipcRenderer.invoke('gradle:remove-dependency', args),
+    runTask: (cwd: string, taskLine: string) => ipcRenderer.invoke('gradle:run-task', cwd, taskLine),
+    tasks: (cwd: string) => ipcRenderer.invoke('gradle:tasks', cwd),
+    dependencyTree: (cwd: string, configuration?: string) => ipcRenderer.invoke('gradle:dependency-tree', cwd, configuration),
+    dependencyInsight: (cwd: string, dependency: string, configuration?: string) => ipcRenderer.invoke('gradle:dependency-insight', cwd, dependency, configuration)
+  },
+
+  go: {
+    detect: (cwd: string) => ipcRenderer.invoke('go:detect', cwd),
+    list: (cwd: string) => ipcRenderer.invoke('go:list', cwd),
+    search: (query: string, cwd?: string) => ipcRenderer.invoke('go:search', query, cwd),
+    versions: (modulePath: string, cwd?: string) => ipcRenderer.invoke('go:versions', modulePath, cwd),
+    install: (args: GoInstallArgs) => ipcRenderer.invoke('go:install', args),
+    uninstall: (args: GoPackageArgs) => ipcRenderer.invoke('go:uninstall', args),
+    update: (args: { modulePath?: string; cwd: string }) => ipcRenderer.invoke('go:update', args),
+    tidy: (cwd: string) => ipcRenderer.invoke('go:tidy', cwd),
+    graph: (cwd: string) => ipcRenderer.invoke('go:graph', cwd),
+    audit: (cwd: string) => ipcRenderer.invoke('go:audit', cwd),
+    run: (cwd: string, commandLine: string) => ipcRenderer.invoke('go:run', cwd, commandLine)
+  },
+
   terminal: {
     create: (cwd?: string) => ipcRenderer.invoke('terminal:create', cwd),
     write: (id: string, data: string) => ipcRenderer.invoke('terminal:write', id, data),
@@ -242,7 +289,7 @@ export interface PipCommandOptions {
 
 export type PipConfigScope = 'user' | 'global' | 'site'
 
-export type ToolName = 'npm' | 'pip' | 'maven'
+export type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
 export type AppLanguage = 'zh-CN' | 'en-US'
 
 export interface MavenDependencyArgs {
@@ -251,4 +298,46 @@ export interface MavenDependencyArgs {
   version: string
   scope?: string
   type?: string
+}
+
+export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+
+export interface CargoInstallArgs {
+  packageName: string
+  version?: string
+  cwd: string
+  type?: 'dependencies' | 'dev-dependencies' | 'build-dependencies'
+  features?: string
+}
+
+export interface CargoPackageArgs {
+  packageName: string
+  cwd: string
+  type?: 'dependencies' | 'dev-dependencies' | 'build-dependencies'
+}
+
+export interface GradleDependencyArgs {
+  groupId: string
+  artifactId: string
+  version: string
+  configuration: string
+  cwd: string
+}
+
+export interface GradleRemoveDependencyArgs {
+  cwd: string
+  groupId: string
+  artifactId: string
+  configuration?: string
+}
+
+export interface GoInstallArgs {
+  modulePath: string
+  version?: string
+  cwd: string
+}
+
+export interface GoPackageArgs {
+  modulePath: string
+  cwd: string
 }

@@ -7,20 +7,34 @@ const { Text } = Typography
 const toolLabels: Record<ToolName, string> = {
   npm: 'npm / Node.js',
   pip: 'pip / Python',
-  maven: 'Maven'
+  maven: 'Maven',
+  cargo: 'Cargo / Rust',
+  gradle: 'Gradle',
+  go: 'Go'
 }
 
-const placeholders: Record<ToolName, string> = {
+const placeholders: Partial<Record<ToolName, string>> = {
   npm: '例如: C:\\Program Files\\nodejs 或 npm.cmd',
   pip: '例如: D:\\env\\python3 或 python.exe',
-  maven: '例如: C:\\apache-maven-3.8.8 或 mvn.cmd'
+  maven: '例如: C:\\apache-maven-3.8.8 或 mvn.cmd',
+  cargo: '例如: C:\\Users\\you\\.cargo\\bin 或 cargo.exe',
+  gradle: '例如: C:\\gradle-8.7 或 gradle.bat',
+  go: '例如: C:\\Program Files\\Go 或 go.exe'
 }
 
-const tools: ToolName[] = ['npm', 'pip', 'maven']
+const tools: ToolName[] = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go']
+const emptyPaths = Object.fromEntries(tools.map((tool) => [tool, ''])) as Record<ToolName, string>
+
+function pathsFromStatuses(statuses: ToolStatus[]): Record<ToolName, string> {
+  return {
+    ...emptyPaths,
+    ...Object.fromEntries(statuses.map((item) => [item.tool, item.configuredPath || '']))
+  } as Record<ToolName, string>
+}
 
 const GlobalToolchainPanel: React.FC = () => {
   const [statuses, setStatuses] = useState<ToolStatus[]>([])
-  const [paths, setPaths] = useState<Record<ToolName, string>>({ npm: '', pip: '', maven: '' })
+  const [paths, setPaths] = useState<Record<ToolName, string>>(emptyPaths)
   const [loading, setLoading] = useState(false)
 
   const statusMap = useMemo(() => {
@@ -36,11 +50,7 @@ const GlobalToolchainPanel: React.FC = () => {
     try {
       const result = await window.electronAPI.system.checkTools()
       setStatuses(result)
-      setPaths({
-        npm: result.find((item) => item.tool === 'npm')?.configuredPath || '',
-        pip: result.find((item) => item.tool === 'pip')?.configuredPath || '',
-        maven: result.find((item) => item.tool === 'maven')?.configuredPath || ''
-      })
+      setPaths(pathsFromStatuses(result))
     } finally {
       setLoading(false)
     }
@@ -51,11 +61,7 @@ const GlobalToolchainPanel: React.FC = () => {
     try {
       const result = await window.electronAPI.system.setToolPath(tool, explicitPath ?? paths[tool] ?? '')
       setStatuses(result)
-      setPaths({
-        npm: result.find((item) => item.tool === 'npm')?.configuredPath || '',
-        pip: result.find((item) => item.tool === 'pip')?.configuredPath || '',
-        maven: result.find((item) => item.tool === 'maven')?.configuredPath || ''
-      })
+      setPaths(pathsFromStatuses(result))
     } finally {
       setLoading(false)
     }
@@ -69,12 +75,12 @@ const GlobalToolchainPanel: React.FC = () => {
   }
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+    <Space orientation="vertical" style={{ width: '100%' }} size={16}>
       <Alert
         type="info"
         showIcon
         title="全局工具版本"
-        description="这里配置全局默认 npm / pip / Maven。项目页中的项目工具版本会优先覆盖这里的配置。"
+        description="这里配置全局默认 npm / pip / Maven / Cargo / Gradle / Go。项目页中的项目工具版本会优先覆盖这里的配置。"
       />
       <Table
         dataSource={tools.map((tool) => ({ tool }))}

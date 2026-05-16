@@ -13,7 +13,7 @@ export const NotificationContainer: React.FC = () => {
   useEffect(() => {
     notifications.forEach((n) => {
       notification[n.type]({
-        message: translateText(language, n.message),
+        title: translateText(language, n.message),
         description: n.description ? translateText(language, n.description) : undefined,
         duration: 4,
         key: n.id,

@@ -11,7 +11,9 @@ import {
   BulbOutlined,
   BulbFilled,
   AppstoreOutlined,
-  ToolOutlined
+  ToolOutlined,
+  DeploymentUnitOutlined,
+  BranchesOutlined
 } from '@ant-design/icons'
 import { ThemeMode, useThemeStore } from '../../stores/themeStore'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
@@ -59,6 +61,21 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       label: t('layout.mavenManagement')
     },
     {
+      key: '/cargo',
+      icon: <BranchesOutlined />,
+      label: t('layout.cargoManagement')
+    },
+    {
+      key: '/gradle',
+      icon: <ApartmentOutlined />,
+      label: t('layout.gradleManagement')
+    },
+    {
+      key: '/go',
+      icon: <CodeOutlined />,
+      label: t('layout.goManagement')
+    },
+    {
       key: '/global',
       icon: <GlobalOutlined />,
       label: t('layout.globalManagement')
@@ -67,6 +84,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       key: '/tool-versions',
       icon: <ToolOutlined />,
       label: t('layout.toolVersions')
+    },
+    {
+      key: '/plugins',
+      icon: <DeploymentUnitOutlined />,
+      label: t('layout.plugins')
     },
     {
       key: '/search',

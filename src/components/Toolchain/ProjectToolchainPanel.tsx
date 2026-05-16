@@ -7,16 +7,30 @@ const { Text } = Typography
 const toolLabels: Record<ToolName, string> = {
   npm: 'npm',
   pip: 'pip / Python',
-  maven: 'Maven'
+  maven: 'Maven',
+  cargo: 'Cargo / Rust',
+  gradle: 'Gradle',
+  go: 'Go'
 }
 
-const toolPlaceholders: Record<ToolName, string> = {
+const toolPlaceholders: Partial<Record<ToolName, string>> = {
   npm: '例如: C:\\Program Files\\nodejs 或 npm.cmd',
   pip: '例如: D:\\env\\python3 或 python.exe',
-  maven: '例如: C:\\apache-maven-3.8.8 或 mvn.cmd'
+  maven: '例如: C:\\apache-maven-3.8.8 或 mvn.cmd',
+  cargo: '例如: C:\\Users\\you\\.cargo\\bin 或 cargo.exe',
+  gradle: '例如: C:\\gradle-8.7 或 gradle.bat',
+  go: '例如: C:\\Program Files\\Go 或 go.exe'
 }
 
-const tools: ToolName[] = ['npm', 'pip', 'maven']
+const tools: ToolName[] = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go']
+const emptyPaths = Object.fromEntries(tools.map((tool) => [tool, ''])) as Record<ToolName, string>
+
+function pathsFromConfig(config: ToolchainConfig): Record<ToolName, string> {
+  return {
+    ...emptyPaths,
+    ...Object.fromEntries(tools.map((tool) => [tool, config[tool] || '']))
+  } as Record<ToolName, string>
+}
 
 interface ProjectToolchainPanelProps {
   projectPath: string
@@ -25,7 +39,7 @@ interface ProjectToolchainPanelProps {
 
 const ProjectToolchainPanel: React.FC<ProjectToolchainPanelProps> = ({ projectPath, compact = false }) => {
   const [statuses, setStatuses] = useState<ToolStatus[]>([])
-  const [paths, setPaths] = useState<Record<ToolName, string>>({ npm: '', pip: '', maven: '' })
+  const [paths, setPaths] = useState<Record<ToolName, string>>(emptyPaths)
   const [loading, setLoading] = useState(false)
 
   const statusMap = useMemo(() => {
@@ -46,11 +60,7 @@ const ProjectToolchainPanel: React.FC<ProjectToolchainPanelProps> = ({ projectPa
         window.electronAPI.project.toolchain.get(projectPath),
         window.electronAPI.project.toolchain.check(projectPath)
       ])
-      setPaths({
-        npm: config.npm || '',
-        pip: config.pip || '',
-        maven: config.maven || ''
-      })
+      setPaths(pathsFromConfig(config))
       setStatuses(result)
     } finally {
       setLoading(false)

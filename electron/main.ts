@@ -7,8 +7,12 @@ import { PublishService } from './services/publish'
 import { SystemService } from './services/system'
 import { PipService } from './services/pip'
 import { MavenService } from './services/maven'
+import { CargoService } from './services/cargo'
+import { GradleService } from './services/gradle'
+import { GoService } from './services/go'
+import { PluginCatalogService } from './services/pluginCatalog'
 import { TerminalService, setTerminalWindow } from './services/terminal'
-import { checkTools, openToolDownload, setToolPath, clearToolPath, getProjectToolchainConfig, checkTool } from './services/toolchain'
+import { checkTools, openToolDownload, setToolPath, clearToolPath, getProjectToolchainConfig, checkTool, TOOL_NAMES } from './services/toolchain'
 import { fileWatcher } from './services/watcher'
 
 const mainDir = __dirname
@@ -78,6 +82,10 @@ const publishService = new PublishService()
 const systemService = new SystemService()
 const pipService = new PipService()
 const mavenService = new MavenService()
+const cargoService = new CargoService()
+const gradleService = new GradleService()
+const goService = new GoService()
+const pluginCatalogService = new PluginCatalogService()
 const terminalService = new TerminalService()
 
 function createWindow() {
@@ -234,7 +242,7 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle('project:toolchain-check', async (_, projectPath: string) => {
-    return await Promise.all(['npm', 'pip', 'maven'].map((tool) => checkTool(tool as any, projectPath)))
+    return await Promise.all(TOOL_NAMES.map((tool) => checkTool(tool, projectPath)))
   })
 
   ipcMain.handle('publish:check', async (_, projectPath: string) => {
@@ -598,6 +606,146 @@ function setupIpcHandlers() {
 
   ipcMain.handle('maven:remove-dependency', async (_, cwd: string, dep) => {
     return await mavenService.removeDependency(cwd, dep)
+  })
+
+  ipcMain.handle('plugins:catalog', async (_, projectPath?: string) => {
+    return await pluginCatalogService.catalog(projectPath)
+  })
+
+  ipcMain.handle('plugins:set-enabled', async (_, id, enabled: boolean, projectPath?: string) => {
+    return await pluginCatalogService.setEnabled(id, enabled, projectPath)
+  })
+
+  ipcMain.handle('plugins:detected', async (_, projectPath: string) => {
+    return await pluginCatalogService.detected(projectPath)
+  })
+
+  ipcMain.handle('cargo:detect', async (_, cwd: string) => {
+    return await cargoService.detect(cwd)
+  })
+
+  ipcMain.handle('cargo:list', async (_, cwd: string) => {
+    return await cargoService.list(cwd)
+  })
+
+  ipcMain.handle('cargo:search', async (_, query: string) => {
+    return await cargoService.search(query)
+  })
+
+  ipcMain.handle('cargo:versions', async (_, packageName: string) => {
+    return await cargoService.versions(packageName)
+  })
+
+  ipcMain.handle('cargo:install', async (_, args) => {
+    return await cargoService.install(args)
+  })
+
+  ipcMain.handle('cargo:uninstall', async (_, args) => {
+    return await cargoService.uninstall(args)
+  })
+
+  ipcMain.handle('cargo:update', async (_, args) => {
+    return await cargoService.update(args)
+  })
+
+  ipcMain.handle('cargo:tree', async (_, cwd: string) => {
+    return await cargoService.tree(cwd)
+  })
+
+  ipcMain.handle('cargo:audit', async (_, cwd: string) => {
+    return await cargoService.audit(cwd)
+  })
+
+  ipcMain.handle('cargo:run', async (_, cwd: string, commandLine: string) => {
+    return await cargoService.run(cwd, commandLine)
+  })
+
+  ipcMain.handle('gradle:detect', async (_, cwd: string) => {
+    return await gradleService.detect(cwd)
+  })
+
+  ipcMain.handle('gradle:list', async (_, cwd: string) => {
+    return await gradleService.list(cwd)
+  })
+
+  ipcMain.handle('gradle:search', async (_, query: string) => {
+    return await gradleService.search(query)
+  })
+
+  ipcMain.handle('gradle:versions', async (_, groupId: string, artifactId: string) => {
+    return await gradleService.versions(groupId, artifactId)
+  })
+
+  ipcMain.handle('gradle:add-dependency', async (_, args) => {
+    return await gradleService.addDependency(args)
+  })
+
+  ipcMain.handle('gradle:update-dependency', async (_, args) => {
+    return await gradleService.updateDependency(args)
+  })
+
+  ipcMain.handle('gradle:remove-dependency', async (_, args) => {
+    return await gradleService.removeDependency(args)
+  })
+
+  ipcMain.handle('gradle:run-task', async (_, cwd: string, taskLine: string) => {
+    return await gradleService.runTask(cwd, taskLine)
+  })
+
+  ipcMain.handle('gradle:tasks', async (_, cwd: string) => {
+    return await gradleService.tasks(cwd)
+  })
+
+  ipcMain.handle('gradle:dependency-tree', async (_, cwd: string, configuration?: string) => {
+    return await gradleService.dependencyTree(cwd, configuration)
+  })
+
+  ipcMain.handle('gradle:dependency-insight', async (_, cwd: string, dependency: string, configuration?: string) => {
+    return await gradleService.dependencyInsight(cwd, dependency, configuration)
+  })
+
+  ipcMain.handle('go:detect', async (_, cwd: string) => {
+    return await goService.detect(cwd)
+  })
+
+  ipcMain.handle('go:list', async (_, cwd: string) => {
+    return await goService.list(cwd)
+  })
+
+  ipcMain.handle('go:search', async (_, query: string, cwd?: string) => {
+    return await goService.search(query, cwd)
+  })
+
+  ipcMain.handle('go:versions', async (_, modulePath: string, cwd?: string) => {
+    return await goService.versions(modulePath, cwd)
+  })
+
+  ipcMain.handle('go:install', async (_, args) => {
+    return await goService.install(args)
+  })
+
+  ipcMain.handle('go:uninstall', async (_, args) => {
+    return await goService.uninstall(args)
+  })
+
+  ipcMain.handle('go:update', async (_, args) => {
+    return await goService.update(args)
+  })
+
+  ipcMain.handle('go:tidy', async (_, cwd: string) => {
+    return await goService.tidy(cwd)
+  })
+
+  ipcMain.handle('go:graph', async (_, cwd: string) => {
+    return await goService.graph(cwd)
+  })
+
+  ipcMain.handle('go:audit', async (_, cwd: string) => {
+    return await goService.audit(cwd)
+  })
+
+  ipcMain.handle('go:run', async (_, cwd: string, commandLine: string) => {
+    return await goService.run(cwd, commandLine)
   })
 
   ipcMain.handle('terminal:create', async (_, cwd?: string) => {

@@ -313,7 +313,7 @@ export const SecurityAuditModal: React.FC<SecurityAuditModalProps> = ({
         width={760}
       >
         {selectedIssue && (
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={16}>
             <Descriptions bordered column={1} size="small">
               <Descriptions.Item label="包名">{selectedIssue.name}</Descriptions.Item>
               <Descriptions.Item label="严重程度">

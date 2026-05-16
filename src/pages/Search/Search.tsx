@@ -10,7 +10,7 @@ import styles from './Search.module.css'
 
 const { Search: SearchInput } = Input
 
-type SearchType = 'npm' | 'pip' | 'maven'
+type SearchType = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
 
 interface SearchItem {
   type: SearchType
@@ -21,20 +21,38 @@ interface SearchItem {
   author?: string
   groupId?: string
   artifactId?: string
+  modulePath?: string
   latestVersion?: string
+  repositoryUrl?: string
+  stars?: number
   raw: any
 }
 
 const SEARCH_TYPE_OPTIONS = [
   { label: 'npm', value: 'npm' },
   { label: 'pip', value: 'pip' },
-  { label: 'Maven', value: 'maven' }
+  { label: 'Maven', value: 'maven' },
+  { label: 'Cargo', value: 'cargo' },
+  { label: 'Gradle', value: 'gradle' },
+  { label: 'Go / GitHub', value: 'go' }
 ]
 
 const SEARCH_PLACEHOLDERS: Record<SearchType, string> = {
   npm: '搜索 npm 包，例如 react、typescript',
   pip: '搜索 PyPI 包，例如 requests、httpx',
-  maven: '搜索 Maven 依赖，例如 spring-core、junit'
+  maven: '搜索 Maven 依赖，例如 spring-core、junit',
+  cargo: '搜索 crates.io，例如 serde、tokio',
+  gradle: '搜索 Gradle/Maven 依赖，例如 spring-core、junit',
+  go: '搜索 GitHub Go 模块，例如 gin 或 github.com/gin-gonic/gin'
+}
+
+const SEARCH_TYPE_COLORS: Record<SearchType, string> = {
+  npm: 'blue',
+  pip: 'cyan',
+  maven: 'purple',
+  cargo: 'volcano',
+  gradle: 'green',
+  go: 'geekblue'
 }
 
 const SearchPage: React.FC = () => {
@@ -160,27 +178,49 @@ const SearchPage: React.FC = () => {
           cwd: currentPath,
           version
         })
-      } else {
+      } else if (item.type === 'maven' || item.type === 'gradle') {
         const targetVersion = version || item.version || item.latestVersion
         if (!targetVersion) {
           throw new Error('未找到可用版本，请先切换版本')
         }
         if (!item.groupId || !item.artifactId) {
-          throw new Error('缺少 Maven 坐标')
+          throw new Error('缺少 Maven/Gradle 坐标')
         }
-        await window.electronAPI.maven.addDependency(currentPath, {
-          groupId: item.groupId,
-          artifactId: item.artifactId,
-          version: targetVersion
+        if (item.type === 'maven') {
+          await window.electronAPI.maven.addDependency(currentPath, {
+            groupId: item.groupId,
+            artifactId: item.artifactId,
+            version: targetVersion
+          })
+        } else {
+          await window.electronAPI.gradle.addDependency({
+            cwd: currentPath,
+            groupId: item.groupId,
+            artifactId: item.artifactId,
+            version: targetVersion,
+            configuration: 'implementation'
+          })
+        }
+      } else if (item.type === 'cargo') {
+        await window.electronAPI.cargo.install({
+          packageName: item.name,
+          cwd: currentPath,
+          version
+        })
+      } else {
+        await window.electronAPI.go.install({
+          modulePath: item.modulePath || item.name,
+          cwd: currentPath,
+          version
         })
       }
 
       addNotification({
         type: 'success',
         message: '安装成功',
-        description: item.type === 'maven'
+        description: item.type === 'maven' || item.type === 'gradle'
           ? `${item.groupId}:${item.artifactId}${version ? `@${version}` : ''}`
-          : `${item.name}${version ? `@${version}` : ''}`
+          : `${item.modulePath || item.name}${version ? `@${version}` : ''}`
       })
 
       if (item.type === 'npm') {
@@ -289,9 +329,9 @@ const SearchPage: React.FC = () => {
           size="small"
           type="primary"
           onClick={() => handleInstall(record)}
-          disabled={record.type === 'maven' && !record.version && !record.latestVersion}
+          disabled={(record.type === 'maven' || record.type === 'gradle') && !record.version && !record.latestVersion}
         >
-          {record.type === 'maven' ? '添加依赖' : '安装'}
+          {record.type === 'maven' || record.type === 'gradle' ? '添加依赖' : '安装'}
         </Button>
         <Button size="small" icon={<SwapOutlined />} onClick={() => handleShowVersions(record)}>
           版本
@@ -405,9 +445,78 @@ const SearchPage: React.FC = () => {
       ]
     }
 
+    if (searchType === 'cargo') {
+      return [
+        {
+          title: 'Crate',
+          dataIndex: 'name',
+          key: 'name',
+          width: 220,
+          render: (text: string, record: SearchItem) => (
+            <Button type="link" size="small" style={{ padding: 0 }} onClick={() => handleShowDetail(record)}>
+              <Tag color="volcano">{text}</Tag>
+            </Button>
+          )
+        },
+        {
+          title: 'Version',
+          dataIndex: 'version',
+          key: 'version',
+          width: 120,
+          render: (text: string) => text ? <Tag>{text}</Tag> : '-'
+        },
+        {
+          title: 'Description',
+          dataIndex: 'description',
+          key: 'description',
+          ellipsis: true,
+          render: (text: string) => text || '-'
+        },
+        actionColumn
+      ]
+    }
+
+    if (searchType === 'go') {
+      return [
+        {
+          title: 'Module',
+          dataIndex: 'modulePath',
+          key: 'modulePath',
+          width: 320,
+          render: (text: string, record: SearchItem) => (
+            <Button type="link" size="small" style={{ padding: 0 }} onClick={() => handleShowDetail(record)}>
+              <Tag color="geekblue">{text || record.name}</Tag>
+            </Button>
+          )
+        },
+        {
+          title: 'Version',
+          dataIndex: 'version',
+          key: 'version',
+          width: 120,
+          render: (text: string) => text ? <Tag>{text}</Tag> : '-'
+        },
+        {
+          title: 'Stars',
+          dataIndex: 'stars',
+          key: 'stars',
+          width: 90,
+          render: (value: number) => value ? value.toLocaleString() : '-'
+        },
+        {
+          title: 'Description',
+          dataIndex: 'description',
+          key: 'description',
+          ellipsis: true,
+          render: (text: string) => text || '-'
+        },
+        actionColumn
+      ]
+    }
+
     return [
       {
-        title: 'GroupId',
+        title: searchType === 'gradle' ? 'Group' : 'GroupId',
         dataIndex: 'groupId',
         key: 'groupId',
         width: 240,
@@ -418,7 +527,7 @@ const SearchPage: React.FC = () => {
         )
       },
       {
-        title: 'ArtifactId',
+        title: searchType === 'gradle' ? 'Artifact' : 'ArtifactId',
         dataIndex: 'artifactId',
         key: 'artifactId',
         width: 220
@@ -467,7 +576,7 @@ const SearchPage: React.FC = () => {
             onSelect={(value) => void runSearch(value)}
           >
             <SearchInput
-              placeholder={SEARCH_PLACEHOLDERS[searchType]}
+              placeholder={SEARCH_PLACEHOLDERS[searchType] || 'Search dependencies'}
               onSearch={(value) => void runSearch(value)}
               enterButton={<><SearchOutlined /> 搜索</>}
               size="large"
@@ -488,7 +597,7 @@ const SearchPage: React.FC = () => {
               rowKey="key"
               size="small"
               pagination={{ pageSize: 20 }}
-              scroll={{ x: searchType === 'npm' ? 980 : searchType === 'pip' ? 900 : 960 }}
+              scroll={{ x: searchType === 'go' ? 1080 : searchType === 'npm' ? 980 : searchType === 'pip' ? 900 : 960 }}
             />
           )}
         </Spin>
@@ -526,7 +635,7 @@ const SearchPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`Maven 依赖详情 - ${mavenDetail?.groupId && mavenDetail?.artifactId ? `${mavenDetail.groupId}:${mavenDetail.artifactId}` : ''}`}
+        title={`${mavenDetail?.type || 'Dependency'} 详情 - ${detailTitle(mavenDetail)}`}
         open={mavenDetailVisible}
         onCancel={() => setMavenDetailVisible(false)}
         footer={null}
@@ -534,11 +643,26 @@ const SearchPage: React.FC = () => {
       >
         {mavenDetail ? (
           <Descriptions bordered column={1} size="small">
-            <Descriptions.Item label="GroupId">{mavenDetail.groupId || '-'}</Descriptions.Item>
-            <Descriptions.Item label="ArtifactId">{mavenDetail.artifactId || '-'}</Descriptions.Item>
+            {(mavenDetail.type === 'maven' || mavenDetail.type === 'gradle') && (
+              <>
+                <Descriptions.Item label="GroupId">{mavenDetail.groupId || '-'}</Descriptions.Item>
+                <Descriptions.Item label="ArtifactId">{mavenDetail.artifactId || '-'}</Descriptions.Item>
+              </>
+            )}
+            {mavenDetail.type === 'go' && (
+              <>
+                <Descriptions.Item label="Module">{mavenDetail.modulePath || mavenDetail.name}</Descriptions.Item>
+                <Descriptions.Item label="Repository">{mavenDetail.repositoryUrl || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Stars">{mavenDetail.stars?.toLocaleString() || '-'}</Descriptions.Item>
+              </>
+            )}
+            {mavenDetail.type === 'cargo' && (
+              <Descriptions.Item label="Crate">{mavenDetail.name}</Descriptions.Item>
+            )}
             <Descriptions.Item label="版本">{mavenDetail.version || mavenDetail.latestVersion || '-'}</Descriptions.Item>
             <Descriptions.Item label="最新版本">{mavenDetail.latestVersion || '-'}</Descriptions.Item>
             <Descriptions.Item label="描述">{mavenDetail.description || '-'}</Descriptions.Item>
+            <Descriptions.Item label="Page">{resolvePackageUrl(mavenDetail) || '-'}</Descriptions.Item>
           </Descriptions>
         ) : (
           <Empty description="暂无详情" />
@@ -546,13 +670,13 @@ const SearchPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`切换版本 - ${selectedItem?.name || ''}`}
+        title={`切换版本 - ${detailTitle(selectedItem)}`}
         open={versionVisible}
         onCancel={() => setVersionVisible(false)}
         footer={null}
         width={560}
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <span>当前版本: <Tag color="blue">{selectedItem?.version || selectedItem?.latestVersion || '-'}</Tag></span>
           <Spin spinning={versionLoading}>
             <div className={styles.versionList}>
@@ -608,6 +732,50 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
     })))
   }
 
+  if (type === 'cargo') {
+    const result = await window.electronAPI.cargo.search(query)
+    return uniqueByKey(result.map((pkg: any) => ({
+      type,
+      key: pkg.name,
+      name: pkg.name,
+      version: pkg.version || '',
+      latestVersion: pkg.version || '',
+      description: pkg.description || '',
+      raw: pkg
+    })))
+  }
+
+  if (type === 'gradle') {
+    const result = await window.electronAPI.gradle.search(query)
+    return uniqueByKey(result.map((dep: any) => ({
+      type,
+      key: `${dep.groupId}:${dep.artifactId}`,
+      name: `${dep.groupId}:${dep.artifactId}`,
+      groupId: dep.groupId,
+      artifactId: dep.artifactId,
+      version: dep.version || dep.latestVersion || '',
+      latestVersion: dep.latestVersion || dep.version || '',
+      description: dep.description || '',
+      raw: dep
+    })))
+  }
+
+  if (type === 'go') {
+    const result = await window.electronAPI.go.search(query, cwd)
+    return uniqueByKey(result.map((mod: any) => ({
+      type,
+      key: mod.path,
+      name: mod.path,
+      modulePath: mod.path,
+      version: mod.version || mod.latest || '',
+      latestVersion: mod.latest || mod.version || '',
+      description: mod.description || '',
+      repositoryUrl: mod.repositoryUrl,
+      stars: mod.stars,
+      raw: mod
+    })))
+  }
+
   const result = await window.electronAPI.maven.search(query, cwd)
   return uniqueByKey(result.map((dep: any) => ({
     type,
@@ -631,7 +799,18 @@ async function fetchVersions(item: SearchItem): Promise<string[]> {
     return await window.electronAPI.pip.versions(item.name)
   }
 
+  if (item.type === 'cargo') {
+    return await window.electronAPI.cargo.versions(item.name)
+  }
+
+  if (item.type === 'go') {
+    return await window.electronAPI.go.versions(item.modulePath || item.name)
+  }
+
   if (!item.groupId || !item.artifactId) return []
+  if (item.type === 'gradle') {
+    return await window.electronAPI.gradle.versions(item.groupId, item.artifactId)
+  }
   return await window.electronAPI.maven.versions(item.groupId, item.artifactId)
 }
 
@@ -660,6 +839,14 @@ function resolvePackageUrl(item: SearchItem): string {
     return `https://pypi.org/project/${encodeURIComponent(item.name)}/`
   }
 
+  if (item.type === 'cargo') {
+    return `https://crates.io/crates/${encodeURIComponent(item.name)}`
+  }
+
+  if (item.type === 'go') {
+    return item.repositoryUrl || `https://pkg.go.dev/${item.modulePath || item.name}`
+  }
+
   if (!item.groupId || !item.artifactId) return ''
   return `https://search.maven.org/artifact/${encodeURIComponent(item.groupId)}/${encodeURIComponent(item.artifactId)}`
 }
@@ -672,10 +859,21 @@ function selectedPipName(detail: PipPackageDetail | null, results: SearchItem[])
   return detail?.name || selectedPipFallback(results)?.name || ''
 }
 
+function detailTitle(item: SearchItem | null): string {
+  if (!item) return ''
+  if ((item.type === 'maven' || item.type === 'gradle') && item.groupId && item.artifactId) {
+    return `${item.groupId}:${item.artifactId}`
+  }
+  if (item.type === 'go') return item.modulePath || item.name
+  return item.name
+}
+
 function toSuggestionOptions(items: SearchItem[], type: SearchType): Array<{ value: string; label: React.ReactNode }> {
   return items.slice(0, 8).map((item) => {
-    const value = item.type === 'maven' && item.groupId && item.artifactId
+    const value = (item.type === 'maven' || item.type === 'gradle') && item.groupId && item.artifactId
       ? `${item.groupId}:${item.artifactId}`
+      : item.type === 'go'
+        ? item.modulePath || item.name
       : item.name
     const version = item.latestVersion || item.version
 
@@ -686,7 +884,7 @@ function toSuggestionOptions(items: SearchItem[], type: SearchType): Array<{ val
           <span className={styles.suggestionName}>{value}</span>
           {version && <Tag className={styles.suggestionVersion}>{version}</Tag>}
           {item.description && <span className={styles.suggestionDesc}>{item.description}</span>}
-          <Tag color={type === 'npm' ? 'blue' : type === 'pip' ? 'cyan' : 'purple'}>{type}</Tag>
+          <Tag color={SEARCH_TYPE_COLORS[type]}>{type}</Tag>
         </div>
       )
     }

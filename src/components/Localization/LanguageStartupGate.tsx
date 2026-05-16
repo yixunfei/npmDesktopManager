@@ -78,7 +78,7 @@ export const LanguageStartupGate: FC = () => {
         </Button>
       ]}
     >
-      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         <Paragraph type="secondary" style={{ marginBottom: 0 }}>
           {t('startup.languageSubtitle')}
         </Paragraph>
@@ -87,15 +87,15 @@ export const LanguageStartupGate: FC = () => {
           onChange={(event) => setSelectedLanguage(event.target.value)}
           style={{ width: '100%' }}
         >
-          <Space direction="vertical" style={{ width: '100%' }}>
+          <Space orientation="vertical" style={{ width: '100%' }}>
             <Radio value="en-US">
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <Title level={5} style={{ margin: 0 }}>English</Title>
                 <Text type="secondary">{t('startup.languageEnglishDescription')}</Text>
               </Space>
             </Radio>
             <Radio value="zh-CN">
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <Title level={5} style={{ margin: 0 }}>简体中文</Title>
                 <Text type="secondary">{t('startup.languageChineseDescription')}</Text>
               </Space>

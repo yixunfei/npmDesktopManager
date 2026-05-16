@@ -99,6 +99,53 @@ declare global {
         removeDependency: (cwd: string, dep: Pick<MavenDependencyInfo, 'groupId' | 'artifactId'>) => Promise<void>
       }
 
+      plugins: {
+        catalog: (projectPath?: string) => Promise<PackageManagerPlugin[]>
+        setEnabled: (id: PackageManagerId, enabled: boolean, projectPath?: string) => Promise<PackageManagerPlugin[]>
+        detected: (projectPath: string) => Promise<PackageManagerId[]>
+      }
+
+      cargo: {
+        detect: (cwd: string) => Promise<{ hasCargoToml: boolean; path: string }>
+        list: (cwd: string) => Promise<CargoDependencyInfo[]>
+        search: (query: string) => Promise<CargoSearchResult[]>
+        versions: (packageName: string) => Promise<string[]>
+        install: (args: CargoInstallArgs) => Promise<string>
+        uninstall: (args: CargoPackageArgs) => Promise<string>
+        update: (args: { packageName?: string; cwd: string }) => Promise<string>
+        tree: (cwd: string) => Promise<string>
+        audit: (cwd: string) => Promise<{ raw: string; error?: string }>
+        run: (cwd: string, commandLine: string) => Promise<string>
+      }
+
+      gradle: {
+        detect: (cwd: string) => Promise<{ hasGradleBuild: boolean; path: string }>
+        list: (cwd: string) => Promise<GradleDependencyInfo[]>
+        search: (query: string) => Promise<GradleSearchResult[]>
+        versions: (groupId: string, artifactId: string) => Promise<string[]>
+        addDependency: (args: GradleDependencyArgs) => Promise<void>
+        updateDependency: (args: GradleDependencyArgs) => Promise<void>
+        removeDependency: (args: GradleRemoveDependencyArgs) => Promise<void>
+        runTask: (cwd: string, taskLine: string) => Promise<string>
+        tasks: (cwd: string) => Promise<string>
+        dependencyTree: (cwd: string, configuration?: string) => Promise<string>
+        dependencyInsight: (cwd: string, dependency: string, configuration?: string) => Promise<string>
+      }
+
+      go: {
+        detect: (cwd: string) => Promise<{ hasGoMod: boolean; path: string }>
+        list: (cwd: string) => Promise<GoModuleInfo[]>
+        search: (query: string, cwd?: string) => Promise<GoModuleInfo[]>
+        versions: (modulePath: string, cwd?: string) => Promise<string[]>
+        install: (args: GoInstallArgs) => Promise<string>
+        uninstall: (args: GoPackageArgs) => Promise<string>
+        update: (args: { modulePath?: string; cwd: string }) => Promise<string>
+        tidy: (cwd: string) => Promise<string>
+        graph: (cwd: string) => Promise<string>
+        audit: (cwd: string) => Promise<{ raw: string; error?: string }>
+        run: (cwd: string, commandLine: string) => Promise<string>
+      }
+
       terminal: {
         create: (cwd?: string) => Promise<TerminalSessionInfo>
         write: (id: string, data: string) => Promise<void>
@@ -350,7 +397,8 @@ declare global {
     code: number | null
   }
 
-  type ToolName = 'npm' | 'pip' | 'maven'
+  type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+  type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
   type AppLanguage = 'zh-CN' | 'en-US'
 
   interface StartupLanguageInfo {
@@ -374,6 +422,101 @@ declare global {
     npm?: string
     pip?: string
     maven?: string
+    cargo?: string
+    gradle?: string
+    go?: string
+  }
+
+  interface PackageManagerPlugin {
+    id: PackageManagerId
+    name: string
+    language: string
+    packageManager: string
+    tools: ToolName[]
+    manifestFiles: string[]
+    lockFiles: string[]
+    capabilities: string[]
+    scenarios: string[]
+    builtIn: boolean
+    enabled: boolean
+    detected: boolean
+    available: boolean
+    version?: string
+    configuredPath?: string
+    message?: string
+  }
+
+  interface CargoDependencyInfo {
+    name: string
+    version: string
+    type: 'dependencies' | 'dev-dependencies' | 'build-dependencies'
+    source?: string
+    optional?: boolean
+  }
+
+  interface CargoSearchResult {
+    name: string
+    version?: string
+    description?: string
+  }
+
+  interface CargoInstallArgs {
+    packageName: string
+    version?: string
+    cwd: string
+    type?: CargoDependencyInfo['type']
+    features?: string
+  }
+
+  interface CargoPackageArgs {
+    packageName: string
+    cwd: string
+    type?: CargoDependencyInfo['type']
+  }
+
+  interface GradleDependencyInfo {
+    groupId: string
+    artifactId: string
+    version: string
+    configuration: string
+  }
+
+  interface GradleSearchResult extends GradleDependencyInfo {
+    latestVersion?: string
+    description?: string
+  }
+
+  interface GradleDependencyArgs extends GradleDependencyInfo {
+    cwd: string
+  }
+
+  interface GradleRemoveDependencyArgs {
+    cwd: string
+    groupId: string
+    artifactId: string
+    configuration?: string
+  }
+
+  interface GoModuleInfo {
+    path: string
+    version: string
+    latest?: string
+    indirect?: boolean
+    replace?: string
+    description?: string
+    repositoryUrl?: string
+    stars?: number
+  }
+
+  interface GoInstallArgs {
+    modulePath: string
+    version?: string
+    cwd: string
+  }
+
+  interface GoPackageArgs {
+    modulePath: string
+    cwd: string
   }
   
   interface FileChangeData {

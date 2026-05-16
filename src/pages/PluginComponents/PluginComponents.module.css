@@ -1,0 +1,110 @@
+.container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-color, #cccccc);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--text-secondary, #999);
+  font-size: 13px;
+}
+
+.pathValue {
+  display: inline-block;
+  max-width: 520px;
+  overflow: hidden;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 6px;
+  color: var(--primary-color, #1890ff);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog,
+.workspace {
+  background: var(--bg-secondary, #2d2d2d);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  color: var(--text-color, #cccccc);
+}
+
+.muted {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text-secondary, #999);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managerPanel {
+  min-height: 240px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.bridge {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 680px;
+}
+
+.output {
+  max-height: 560px;
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--bg-tertiary, #1e1e1e);
+  color: var(--text-color, #cccccc);
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 760px) {
+  .pathValue {
+    max-width: 100%;
+  }
+}

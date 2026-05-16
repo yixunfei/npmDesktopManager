@@ -229,13 +229,13 @@ export const DependencyTreeModal: React.FC<DependencyTreeModalProps> = ({
         {treeData && (
           <>
             <Card size="small" style={{ marginBottom: 16 }}>
-              <Space split={<span style={{ color: '#999' }}>|</span>}>
+              <Space separator={<span style={{ color: '#999' }}>|</span>}>
                 <span>直接依赖: <Tag color="blue">{totalPackages}</Tag></span>
                 <span>全部依赖: <Tag color="green">{totalDeps}</Tag></span>
               </Space>
             </Card>
             
-            <Space style={{ marginBottom: 16, width: '100%' }} direction="vertical">
+            <Space style={{ marginBottom: 16, width: '100%' }} orientation="vertical">
               <Space wrap>
                 <Search
                   placeholder={searchMode === 'exact' ? '精确搜索包名...' : '模糊搜索包名...'}

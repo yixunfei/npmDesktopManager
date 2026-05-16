@@ -3,13 +3,10 @@ import { access, mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { runLoggedCommand } from './commandRunner'
 
-export type ToolName = 'npm' | 'pip' | 'maven'
+export const TOOL_NAMES = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go'] as const
+export type ToolName = typeof TOOL_NAMES[number]
 
-export interface ToolchainConfig {
-  npm?: string
-  pip?: string
-  maven?: string
-}
+export type ToolchainConfig = Partial<Record<ToolName, string>>
 
 export interface ToolStatus {
   tool: ToolName
@@ -23,13 +20,19 @@ export interface ToolStatus {
 const DEFAULT_DOWNLOADS: Record<ToolName, string> = {
   npm: 'https://nodejs.org/en/download',
   pip: 'https://www.python.org/downloads/',
-  maven: 'https://maven.apache.org/download.cgi'
+  maven: 'https://maven.apache.org/download.cgi',
+  cargo: 'https://www.rust-lang.org/tools/install',
+  gradle: 'https://gradle.org/install/',
+  go: 'https://go.dev/dl/'
 }
 
 const DEFAULT_BINS: Record<ToolName, string> = {
   npm: process.platform === 'win32' ? 'npm.cmd' : 'npm',
   pip: process.platform === 'win32' ? 'pip.exe' : 'pip',
-  maven: process.platform === 'win32' ? 'mvn.cmd' : 'mvn'
+  maven: process.platform === 'win32' ? 'mvn.cmd' : 'mvn',
+  cargo: process.platform === 'win32' ? 'cargo.exe' : 'cargo',
+  gradle: process.platform === 'win32' ? 'gradle.bat' : 'gradle',
+  go: process.platform === 'win32' ? 'go.exe' : 'go'
 }
 
 export async function getToolchainConfig(projectPath?: string): Promise<ToolchainConfig> {
@@ -71,13 +74,7 @@ export async function resolveToolBin(tool: ToolName, projectPath?: string): Prom
   if (!configuredPath) return DEFAULT_BINS[tool]
 
   if (await isDirectory(configuredPath)) {
-    if (tool === 'maven') {
-      return await firstExisting([
-        join(configuredPath, DEFAULT_BINS.maven),
-        join(configuredPath, 'bin', DEFAULT_BINS.maven)
-      ], join(configuredPath, DEFAULT_BINS.maven))
-    }
-    return join(configuredPath, DEFAULT_BINS[tool])
+    return await firstExisting(directoryBinCandidates(tool, configuredPath), join(configuredPath, DEFAULT_BINS[tool]))
   }
 
   return configuredPath
@@ -122,7 +119,7 @@ export async function checkTool(tool: ToolName, projectPath?: string): Promise<T
 }
 
 export async function checkTools(projectPath?: string): Promise<ToolStatus[]> {
-  return Promise.all(['npm', 'pip', 'maven'].map((tool) => checkTool(tool as ToolName, projectPath)))
+  return Promise.all(TOOL_NAMES.map((tool) => checkTool(tool, projectPath)))
 }
 
 export async function openToolDownload(tool: ToolName): Promise<void> {
@@ -164,15 +161,12 @@ async function getCheckCandidates(tool: ToolName, configuredPath?: string): Prom
         ]
       }
       if (tool === 'maven') {
-        return [
-          { bin: join(configuredPath, DEFAULT_BINS.maven), args: ['-version'], configured: true },
-          { bin: join(configuredPath, 'bin', DEFAULT_BINS.maven), args: ['-version'], configured: true }
-        ]
+        return directoryBinCandidates(tool, configuredPath).map((bin) => ({ bin, args: versionArgs(tool), configured: true }))
       }
-      return [{ bin: join(configuredPath, DEFAULT_BINS[tool]), args: tool === 'maven' ? ['-version'] : ['--version'], configured: true }]
+      return directoryBinCandidates(tool, configuredPath).map((bin) => ({ bin, args: versionArgs(tool), configured: true }))
     }
 
-    return [{ bin: configuredPath, args: tool === 'maven' ? ['-version'] : ['--version'], configured: true }]
+    return [{ bin: configuredPath, args: versionArgs(tool), configured: true }]
   }
 
   if (tool === 'pip') {
@@ -190,7 +184,24 @@ async function getCheckCandidates(tool: ToolName, configuredPath?: string): Prom
         ]
   }
 
-  return [{ bin: DEFAULT_BINS[tool], args: tool === 'maven' ? ['-version'] : ['--version'] }]
+  return [{ bin: DEFAULT_BINS[tool], args: versionArgs(tool) }]
+}
+
+function directoryBinCandidates(tool: ToolName, directory: string): string[] {
+  if (tool === 'maven' || tool === 'gradle' || tool === 'cargo' || tool === 'go') {
+    return [
+      join(directory, DEFAULT_BINS[tool]),
+      join(directory, 'bin', DEFAULT_BINS[tool])
+    ]
+  }
+
+  return [join(directory, DEFAULT_BINS[tool])]
+}
+
+function versionArgs(tool: ToolName): string[] {
+  if (tool === 'maven' || tool === 'gradle') return ['-version']
+  if (tool === 'go') return ['version']
+  return ['--version']
 }
 
 async function firstExisting(paths: string[], fallback: string): Promise<string> {

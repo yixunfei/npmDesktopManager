@@ -806,6 +806,7 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
         onOk={() => installForm.submit()}
         okText="安装"
         cancelText="取消"
+      forceRender
       >
         <Form form={installForm} onFinish={handleInstall} layout="vertical" initialValues={{ dev: false }}>
           <Form.Item name="package" label="包名" rules={[{ required: true, message: '请输入包名' }]}>
@@ -832,6 +833,7 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
         onOk={() => moveDepForm.submit()}
         okText="切换"
         cancelText="取消"
+      forceRender
       >
         <Form form={moveDepForm} onFinish={handleMoveDep} layout="vertical">
           <Form.Item name="packageName" label="包名">

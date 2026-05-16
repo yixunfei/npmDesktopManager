@@ -25,7 +25,7 @@ const lineBreak = '\r\n'
 
 const CommandLogWindow: React.FC = () => {
   const currentPath = useAppStore((state) => state.currentPath)
-  const { logs, visible, toggleVisible, clearLogs } = useCommandLogStore()
+  const { logs, visible, toggleVisible, clearLogs, setVisible } = useCommandLogStore()
   const language = useSettingsStore((state) => state.language)
   const text = useTextT()
   const terminalEndRef = useRef<HTMLDivElement>(null)
@@ -92,6 +92,13 @@ const CommandLogWindow: React.FC = () => {
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [terminalBuffer, visible])
+
+  useEffect(() => {
+    if (!visible || !terminalCollapsed || !logsCollapsed) return
+    setVisible(false)
+    setTerminalCollapsed(false)
+    setLogsCollapsed(false)
+  }, [visible, terminalCollapsed, logsCollapsed, setVisible])
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -303,7 +310,7 @@ const CommandLogWindow: React.FC = () => {
                         onPressEnter={sendCommand}
                         onKeyDown={handleCommandKeyDown}
                         placeholder={`${promptText} ${text('输入命令后按 Enter')}`}
-                        bordered={false}
+                        variant="borderless"
                         className={styles.commandInput}
                       />
                       <Button type="primary" icon={<SendOutlined />} onClick={sendCommand} disabled={!session || !command.trim()}>
@@ -347,7 +354,11 @@ const CommandLogWindow: React.FC = () => {
                       </div>
                     ) : (
                       logs.map((log) => (
-                        <div key={log.id} className={`${styles.logEntry} ${styles[log.status] || ''}`}>
+                        <div
+                          key={log.id}
+                          className={`${styles.logEntry} ${styles[log.status] || ''} ${hasOutput(log) ? styles.clickableLog : ''}`}
+                          onClick={() => hasOutput(log) && toggleLogExpansion(log.id)}
+                        >
                           <div className={styles.logHeader}>
                             <Space size={6}>
                               <Text type="secondary" className={styles.time}>
@@ -360,7 +371,10 @@ const CommandLogWindow: React.FC = () => {
                                 type="text"
                                 size="small"
                                 icon={expandedLogs.has(log.id) ? <UpOutlined /> : <DownOutlined />}
-                                onClick={() => toggleLogExpansion(log.id)}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toggleLogExpansion(log.id)
+                                }}
                               />
                             )}
                           </div>

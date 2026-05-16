@@ -1,6 +1,6 @@
 import React from 'react'
 import { Button, Card, Space, Typography } from 'antd'
-import { AppstoreOutlined, ApartmentOutlined, CloudUploadOutlined, FolderOpenOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, ApartmentOutlined, BranchesOutlined, CloudUploadOutlined, CodeOutlined, DeploymentUnitOutlined, FolderOpenOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../stores/appStore'
 import styles from './ManagerHub.module.css'
@@ -39,8 +39,8 @@ const ManagerHub: React.FC = () => {
       </div>
 
       <div className={styles.grid}>
-        <Card className={styles.card} bordered={false}>
-          <Space direction="vertical" size={12}>
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
             <AppstoreOutlined className={styles.icon} />
             <Title level={4}>npm 管理</Title>
             <Paragraph className={styles.cardText}>
@@ -50,8 +50,8 @@ const ManagerHub: React.FC = () => {
           </Space>
         </Card>
 
-        <Card className={styles.card} bordered={false}>
-          <Space direction="vertical" size={12}>
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
             <ApartmentOutlined className={styles.icon} />
             <Title level={4}>Maven 管理</Title>
             <Paragraph className={styles.cardText}>
@@ -61,14 +61,57 @@ const ManagerHub: React.FC = () => {
           </Space>
         </Card>
 
-        <Card className={styles.card} bordered={false}>
-          <Space direction="vertical" size={12}>
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
+            <BranchesOutlined className={styles.icon} />
+            <Title level={4}>Cargo 管理</Title>
+            <Paragraph className={styles.cardText}>
+              Rust crates、Cargo.toml 依赖、命令运行、依赖树与安全审计。
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate('/cargo')}>进入 Cargo 管理</Button>
+          </Space>
+        </Card>
+
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
+            <ApartmentOutlined className={styles.icon} />
+            <Title level={4}>Gradle 管理</Title>
+            <Paragraph className={styles.cardText}>
+              JVM 依赖、Maven Central 搜索、任务运行、依赖树与 insight。
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate('/gradle')}>进入 Gradle 管理</Button>
+          </Space>
+        </Card>
+
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
+            <CodeOutlined className={styles.icon} />
+            <Title level={4}>Go 管理</Title>
+            <Paragraph className={styles.cardText}>
+              go.mod 模块、GitHub 搜索、版本更新、tidy、graph 与漏洞检查。
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate('/go')}>进入 Go 管理</Button>
+          </Space>
+        </Card>
+
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
             <SettingOutlined className={styles.icon} />
             <Title level={4}>pip 管理</Title>
             <Paragraph className={styles.cardText}>
               环境包、配置源、审计修复、发布与 Python 版本绑定。
             </Paragraph>
             <Button type="primary" onClick={() => navigate('/pip')}>进入 pip 管理</Button>
+          </Space>
+        </Card>
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
+            <DeploymentUnitOutlined className={styles.icon} />
+            <Title level={4}>Plugin Components</Title>
+            <Paragraph className={styles.cardText}>
+              Cargo, Gradle, Go and componentized manager extensions.
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate('/plugins')}>Open Plugin Components</Button>
           </Space>
         </Card>
       </div>

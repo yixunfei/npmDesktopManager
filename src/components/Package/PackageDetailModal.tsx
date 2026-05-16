@@ -257,7 +257,7 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
                 }
                 key={version}
               >
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <Text>版本: {version}</Text>
                   <Text type="secondary">
                     发布时间: {formatDate(packageInfo?.time?.[version] || '')}

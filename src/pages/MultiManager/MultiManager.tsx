@@ -24,6 +24,7 @@ import ProjectPage from '../Project/Project'
 import GlobalPage from '../Global/Global'
 import PublishPage from '../Publish/Publish'
 import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
+import RuntimeManagerSwitch from '../../components/ManagerSwitch/RuntimeManagerSwitch'
 import styles from './MultiManager.module.css'
 
 type ManagerType = 'npm' | 'pip' | 'maven'
@@ -33,12 +34,6 @@ const MANAGER_ROUTES: Record<ManagerType, string> = {
   pip: '/pip',
   maven: '/maven'
 }
-
-const MANAGER_OPTIONS = [
-  { label: 'npm', value: 'npm' },
-  { label: 'pip', value: 'pip' },
-  { label: 'Maven', value: 'maven' }
-]
 
 const COMMON_MAVEN_GOALS = ['clean', 'compile', 'test', 'package', 'install', 'clean package', 'dependency:tree']
 const PIP_CONFIG_KEY_OPTIONS = [
@@ -1160,11 +1155,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
             <h2 className={styles.title}>依赖管理</h2>
             <div className={styles.subtitle}>先选择 npm、pip 或 Maven，再进入项目依赖、全局依赖、发布与配置操作。</div>
           </div>
-          <Segmented
-            value={activeManager}
-            onChange={(value) => switchManager(value as ManagerType)}
-            options={MANAGER_OPTIONS}
-          />
+          <RuntimeManagerSwitch active={activeManager} />
         </div>
         <div className={styles.actions}>
           <ProjectPathBar compact />
@@ -1542,6 +1533,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => pipForm.submit()}
         okText="安装"
         cancelText="取消"
+      forceRender
       >
         <Form form={pipForm} layout="vertical" onFinish={installPipPackage} initialValues={{ upgrade: 'false' }}>
           <Form.Item name="packageName" label="包名" rules={[{ required: true, message: '请输入包名' }]}>
@@ -1606,6 +1598,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => pipConfigForm.submit()}
         okText="保存"
         cancelText="取消"
+      forceRender
       >
         <Form form={pipConfigForm} layout="vertical" onFinish={savePipConfig}>
           <Form.Item name="key" label="配置项" rules={[{ required: true, message: '请输入配置项' }]}>
@@ -1624,6 +1617,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => pipMirrorForm.submit()}
         okText="保存"
         cancelText="取消"
+      forceRender
       >
         <Form form={pipMirrorForm} layout="vertical" onFinish={saveCustomPipMirror}>
           <Form.Item name="indexUrl" label="Index URL" rules={[{ required: true, message: '请输入镜像源地址' }]}>
@@ -1700,7 +1694,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         footer={null}
         width={560}
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <span>当前版本: <Tag color="blue">{pipSelectedPackage?.version || '-'}</Tag></span>
           <div className={styles.versions}>
             {pipVersionOptions.length === 0 ? (
@@ -1781,6 +1775,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => mavenForm.submit()}
         okText="添加"
         cancelText="取消"
+      forceRender
       >
         <Form form={mavenForm} layout="vertical" onFinish={addMavenDependency}>
           <Form.Item name="groupId" label="groupId" rules={[{ required: true, message: '请输入 groupId' }]}>
@@ -1845,6 +1840,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => goalForm.submit()}
         okText="执行"
         cancelText="取消"
+      forceRender
       >
         <Form form={goalForm} layout="vertical" onFinish={runMavenGoal} initialValues={{ goal: 'test' }}>
           <Form.Item name="goal" label="Goal" rules={[{ required: true, message: '请输入 Maven goal' }]}>
@@ -1860,7 +1856,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         footer={null}
         width={560}
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <span>当前版本: <Tag color="blue">{mavenSelectedDep?.version || '继承/变量'}</Tag></span>
           <div className={styles.versions}>
             {mavenVersionOptions.length === 0 ? (
@@ -1888,6 +1884,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => mavenMirrorForm.submit()}
         okText="保存"
         cancelText="取消"
+      forceRender
       >
         <Form form={mavenMirrorForm} layout="vertical" onFinish={saveCustomMavenMirror}>
           <Form.Item name="id" label="Mirror ID" rules={[{ required: true, message: '请输入 mirror id' }]}>
@@ -1916,6 +1913,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onOk={() => mavenServerForm.submit()}
         okText="保存"
         cancelText="取消"
+      forceRender
       >
         <Form form={mavenServerForm} layout="vertical" onFinish={saveMavenServer}>
           <Form.Item name="id" label="Server ID" rules={[{ required: true, message: '请输入 server id' }]}>

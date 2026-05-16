@@ -73,7 +73,7 @@ export const PackageConflictModal: React.FC<PackageConflictModalProps> = ({
         onChange={(e) => setSelectedOption(e.target.value)}
         style={{ width: '100%' }}
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <Radio value="recommended" style={{ width: '100%' }}>
             <Card size="small" style={{ marginLeft: 8, borderColor: selectedOption === 'recommended' ? '#1890ff' : undefined }}>
               <Space>

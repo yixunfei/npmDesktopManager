@@ -30,7 +30,7 @@ const ToolVersionsPage: React.FC = () => {
         <div>
           <h2 className={styles.title}>项目工具版本</h2>
           <Text type="secondary">
-            为不同项目绑定不同的 npm、pip/Python、Maven 版本；项目配置优先于全局默认，留空时使用系统 PATH。
+            为不同项目绑定 npm、pip/Python、Maven、Cargo、Gradle、Go 工具版本；项目配置优先于全局默认，留空时使用系统 PATH。
           </Text>
         </div>
         <Space wrap>
