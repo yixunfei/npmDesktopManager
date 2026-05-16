@@ -91,7 +91,7 @@ const ProjectToolchainPanel: React.FC<ProjectToolchainPanelProps> = ({ projectPa
       <Alert
         type="info"
         showIcon
-        message="选择项目目录后可为该项目单独绑定 npm / pip / Maven 版本"
+        title="选择项目目录后可为该项目单独绑定 npm / pip / Maven 版本"
       />
     )
   }

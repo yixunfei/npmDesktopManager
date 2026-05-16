@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { Modal, Table, Tag, Alert, Button, Space, Spin, Typography, Card, Row, Col, Descriptions, message } from 'antd'
+import { Modal, Table, Tag, Alert, Button, Space, Spin, Typography, Card, Row, Col, Descriptions } from 'antd'
 import {
   WarningOutlined, CheckCircleOutlined,
   SecurityScanOutlined, InfoCircleOutlined
 } from '@ant-design/icons'
+import { localizedMessage as message } from '../../utils/localizedFeedback'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -276,7 +277,7 @@ export const SecurityAuditModal: React.FC<SecurityAuditModalProps> = ({
 
           {totalVulnerabilities === 0 ? (
             <Alert
-              message="未发现安全漏洞"
+              title="未发现安全漏洞"
               description={isGlobal ? '当前全局依赖没有返回已知安全漏洞' : '您的项目依赖没有已知的安全漏洞'}
               type="success"
               showIcon
@@ -285,7 +286,7 @@ export const SecurityAuditModal: React.FC<SecurityAuditModalProps> = ({
           ) : (
             <>
               <Alert
-                message={`发现 ${totalVulnerabilities} 个安全漏洞`}
+                title={`发现 ${totalVulnerabilities} 个安全漏洞`}
                 description={isGlobal ? '全局审计结果依赖 npm 当前版本支持情况；建议优先在具体项目中修复依赖。' : '建议先查看详情，再执行自动修复或手动升级关键依赖。'}
                 type="warning"
                 showIcon

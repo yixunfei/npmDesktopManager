@@ -4,6 +4,8 @@ import MainLayout from './components/Layout/MainLayout'
 import { NotificationContainer } from './components/Notification/NotificationContainer'
 import CommandLogWindow from './components/CommandLog/CommandLogWindow'
 import ToolchainStatusModal from './components/Toolchain/ToolchainStatusModal'
+import { LanguageStartupGate } from './components/Localization/LanguageStartupGate'
+import { RuntimeLocalizer } from './components/Localization/RuntimeLocalizer'
 import { useAppStore } from './stores/appStore'
 
 const Search = lazy(() => import('./pages/Search/Search'))
@@ -24,6 +26,8 @@ const App: React.FC = () => {
   
   return (
     <>
+      <RuntimeLocalizer />
+      <LanguageStartupGate />
       <MainLayout>
         <Suspense fallback={null}>
           <Routes>

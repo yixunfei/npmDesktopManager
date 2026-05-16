@@ -285,7 +285,7 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
           {dependencyTree?.dependencies?.length > 0 ? (
             <>
               <Alert
-                message={`此包有 ${dependencyTree.dependencies.length} 个直接依赖`}
+                title={`此包有 ${dependencyTree.dependencies.length} 个直接依赖`}
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
@@ -298,7 +298,7 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
             </>
           ) : (
             <Alert
-              message="此包没有运行时依赖"
+              title="此包没有运行时依赖"
               type="success"
               showIcon
               icon={<CheckCircleOutlined />}

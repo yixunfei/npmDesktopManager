@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  app: {
+    getStartupLanguage: () => ipcRenderer.invoke('app:get-startup-language'),
+    setMenuLanguage: (language: AppLanguage) => ipcRenderer.invoke('app:set-menu-language', language)
+  },
+
   getDefaultPath: () => ipcRenderer.invoke('get-default-path'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   
@@ -238,6 +243,7 @@ export interface PipCommandOptions {
 export type PipConfigScope = 'user' | 'global' | 'site'
 
 export type ToolName = 'npm' | 'pip' | 'maven'
+export type AppLanguage = 'zh-CN' | 'en-US'
 
 export interface MavenDependencyArgs {
   groupId: string

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Button, Card, Form, Input, Select, Alert, Descriptions, Tag, message, Space, Switch } from 'antd'
+import { Button, Card, Form, Input, Select, Alert, Descriptions, Tag, Space, Switch } from 'antd'
 import { FolderOpenOutlined, CloudUploadOutlined, CheckCircleOutlined, WarningOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
+import { localizedMessage as message } from '../../utils/localizedFeedback'
 import styles from './Publish.module.css'
 
 const PublishPage: React.FC = () => {
@@ -212,7 +213,7 @@ const PublishPage: React.FC = () => {
           >
             {checkResult.canPublish ? (
               <Alert
-                message="项目检查通过"
+                title="项目检查通过"
                 description="可以安全地发布此包"
                 type="success"
                 showIcon
@@ -220,7 +221,7 @@ const PublishPage: React.FC = () => {
               />
             ) : (
               <Alert
-                message="项目检查未通过"
+                title="项目检查未通过"
                 description="请解决以下错误后再发布"
                 type="error"
                 showIcon

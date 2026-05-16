@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import https from 'https'
 import { BrowserWindow } from 'electron'
-import { runLoggedCommand } from './commandRunner'
+import { resolveShellFreeCommand, runLoggedCommand } from './commandRunner'
 import { setCommandLogWindow } from './commandLogger'
 import { resolveToolBin } from './toolchain'
 
@@ -166,9 +166,10 @@ export class NpmService {
         args.push('--registry', registry)
       }
       
-      const child = spawn(npmBin, args, {
+      const command = resolveShellFreeCommand(npmBin, args)
+      const child = spawn(command.bin, command.args, {
         stdio: 'inherit',
-        shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(npmBin),
+        shell: false,
         windowsHide: true
       })
       
@@ -296,9 +297,10 @@ export class NpmService {
         args.push('--registry', registry)
       }
       
-      const child = spawn(npmBin, args, {
+      const command = resolveShellFreeCommand(npmBin, args)
+      const child = spawn(command.bin, command.args, {
           stdio: 'inherit',
-          shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(npmBin),
+          shell: false,
           windowsHide: true
       })
       

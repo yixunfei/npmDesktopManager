@@ -73,7 +73,7 @@ const GlobalToolchainPanel: React.FC = () => {
       <Alert
         type="info"
         showIcon
-        message="全局工具版本"
+        title="全局工具版本"
         description="这里配置全局默认 npm / pip / Maven。项目页中的项目工具版本会优先覆盖这里的配置。"
       />
       <Table

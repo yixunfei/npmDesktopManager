@@ -11,6 +11,7 @@ import { DependencyTreeModal } from '../../components/Package/DependencyTreeModa
 import { BatchVersionPreviewModal } from '../../components/Package/BatchVersionPreviewModal'
 import ProjectToolchainPanel from '../../components/Toolchain/ProjectToolchainPanel'
 import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
+import { localizedModal } from '../../utils/localizedFeedback'
 import styles from './Project.module.css'
 
 interface ProjectPageProps {
@@ -412,7 +413,7 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
       return
     }
 
-    Modal.confirm({
+    localizedModal.confirm({
       title: '确认批量卸载',
       content: `确定要卸载选中的 ${selectedRowKeys.length} 个包吗？`,
       onOk: async () => {
@@ -659,7 +660,7 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
               } else if (key === 'changelog') {
                 handleViewChangelog(record.name)
               } else if (key === 'uninstall') {
-                Modal.confirm({
+                localizedModal.confirm({
                   title: '确认卸载',
                   content: `确定要卸载 ${record.name} 吗？`,
                   onOk: () => handleUninstall(record.name)

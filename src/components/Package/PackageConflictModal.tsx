@@ -51,7 +51,7 @@ export const PackageConflictModal: React.FC<PackageConflictModalProps> = ({
       width={700}
     >
       <Alert
-        message="发现版本冲突"
+        title="发现版本冲突"
         description={
           <span>
             包 <Text strong>{packageName}</Text> 有安全更新，但与推荐版本存在冲突。

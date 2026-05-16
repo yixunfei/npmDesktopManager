@@ -1178,7 +1178,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         className={styles.detectBanner}
         type={detectedManagers.length > 0 ? 'success' : 'info'}
         showIcon
-        message={detectedManagers.length > 0 ? '已识别当前项目依赖类型' : '请选择项目目录或手动选择管理器'}
+        title={detectedManagers.length > 0 ? '已识别当前项目依赖类型' : '请选择项目目录或手动选择管理器'}
         description={
           <Space wrap>
             {detectedManagers.length > 0 ? (

@@ -81,7 +81,7 @@ const ToolchainStatusModal: React.FC = () => {
       <Alert
         type="warning"
         showIcon
-        message={`检测到 ${unavailable.map((item) => toolLabels[item.tool]).join('、')} 不可用`}
+        title={`检测到 ${unavailable.map((item) => toolLabels[item.tool]).join('、')} 不可用`}
         description="请选择命令所在目录，系统会自动查找对应可执行文件；也可以打开官方下载页面安装后重新检测。"
         style={{ marginBottom: 16 }}
       />

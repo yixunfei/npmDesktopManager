@@ -57,6 +57,8 @@
   "build": {
     "appId": "com.npm.desktop.manager",
     "productName": "npmDesktopManager",
+    "asar": true,
+    "compression": "maximum",
     "directories": {
       "output": "release"
     },
@@ -107,6 +109,13 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "displayLanguageSelector": true,
+      "multiLanguageInstaller": true,
+      "installerLanguages": [
+        "en_US",
+        "zh_CN"
+      ],
+      "language": "1033",
       "deleteAppDataOnUninstall": false
     }
   }

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
 import { join } from 'path'
+import { existsSync, readFileSync } from 'fs'
 import { NpmService, setNpmServiceWindow } from './services/npm'
 import { ProjectService } from './services/project'
 import { PublishService } from './services/publish'
@@ -11,6 +12,64 @@ import { checkTools, openToolDownload, setToolPath, clearToolPath, getProjectToo
 import { fileWatcher } from './services/watcher'
 
 const mainDir = __dirname
+type AppLanguage = 'zh-CN' | 'en-US'
+
+if (process.platform === 'win32' && !process.env.ELECTRON_ENABLE_CHROMIUM_LOGGING) {
+  app.commandLine.appendSwitch('log-level', '3')
+}
+
+interface StartupLanguageInfo {
+  language: AppLanguage
+  source: 'installer' | 'default'
+  shouldPrompt: boolean
+  isPackaged: boolean
+  isPortable: boolean
+}
+
+const menuLabels: Record<AppLanguage, Record<string, string>> = {
+  'en-US': {
+    file: 'File',
+    quit: 'Quit',
+    edit: 'Edit',
+    undo: 'Undo',
+    redo: 'Redo',
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+    view: 'View',
+    reload: 'Reload',
+    devTools: 'Developer Tools',
+    resetZoom: 'Reset Zoom',
+    zoomIn: 'Zoom In',
+    zoomOut: 'Zoom Out',
+    fullscreen: 'Full Screen',
+    help: 'Help',
+    about: 'About',
+    aboutTitle: 'About npmDesktopManager',
+    aboutDetail: 'A graphical npm package manager\nSupports project dependencies and global package management'
+  },
+  'zh-CN': {
+    file: '文件',
+    quit: '退出',
+    edit: '编辑',
+    undo: '撤销',
+    redo: '重做',
+    cut: '剪切',
+    copy: '复制',
+    paste: '粘贴',
+    view: '视图',
+    reload: '重新加载',
+    devTools: '开发者工具',
+    resetZoom: '重置缩放',
+    zoomIn: '放大',
+    zoomOut: '缩小',
+    fullscreen: '全屏',
+    help: '帮助',
+    about: '关于',
+    aboutTitle: '关于 npmDesktopManager',
+    aboutDetail: '一个图形化的 npm 包管理工具\n支持项目依赖和全局包管理'
+  }
+}
 
 let mainWindow: BrowserWindow | null = null
 const npmService = new NpmService()
@@ -68,59 +127,8 @@ function createWindow() {
   })
 }
 
-const template: any[] = [
-  {
-    label: '文件',
-    submenu: [
-      { role: 'quit', label: '退出' }
-    ]
-  },
-  {
-    label: '编辑',
-    submenu: [
-      { role: 'undo', label: '撤销' },
-      { role: 'redo', label: '重做' },
-      { type: 'separator' },
-      { role: 'cut', label: '剪切' },
-      { role: 'copy', label: '复制' },
-      { role: 'paste', label: '粘贴' }
-    ]
-  },
-  {
-    label: '视图',
-    submenu: [
-      { role: 'reload', label: '重新加载' },
-      { role: 'toggleDevTools', label: '开发者工具' },
-      { type: 'separator' },
-      { role: 'resetZoom', label: '重置缩放' },
-      { role: 'zoomIn', label: '放大' },
-      { role: 'zoomOut', label: '缩小' },
-      { type: 'separator' },
-      { role: 'togglefullscreen', label: '全屏' }
-    ]
-  },
-  {
-    label: '帮助',
-    submenu: [
-      {
-        label: '关于',
-        click: async () => {
-          dialog.showMessageBox(mainWindow!, {
-            type: 'info',
-            title: '关于 npmDesktopManager',
-            message: 'npmDesktopManager v1.0.0',
-            detail: '一个图形化的 npm 包管理工具\n支持项目依赖和全局包管理'
-          })
-        }
-      }
-    ]
-  }
-]
-
-const menu = Menu.buildFromTemplate(template)
-Menu.setApplicationMenu(menu)
-
 app.whenReady().then(() => {
+  setupApplicationMenu(getStartupLanguageInfo().language)
   createWindow()
   setupIpcHandlers()
 })
@@ -138,6 +146,14 @@ app.on('activate', () => {
 })
 
 function setupIpcHandlers() {
+  ipcMain.handle('app:get-startup-language', async () => {
+    return getStartupLanguageInfo()
+  })
+
+  ipcMain.handle('app:set-menu-language', async (_, language: AppLanguage) => {
+    setupApplicationMenu(language)
+  })
+
   ipcMain.handle('get-default-path', async () => {
     return app.getPath('home') || process.cwd()
   })
@@ -595,4 +611,115 @@ function setupIpcHandlers() {
   ipcMain.handle('terminal:kill', async (_, id: string) => {
     return terminalService.kill(id)
   })
+}
+
+function setupApplicationMenu(language: AppLanguage) {
+  const labels = menuLabels[language] || menuLabels['en-US']
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: labels.file,
+      submenu: [
+        { role: 'quit', label: labels.quit }
+      ]
+    },
+    {
+      label: labels.edit,
+      submenu: [
+        { role: 'undo', label: labels.undo },
+        { role: 'redo', label: labels.redo },
+        { type: 'separator' },
+        { role: 'cut', label: labels.cut },
+        { role: 'copy', label: labels.copy },
+        { role: 'paste', label: labels.paste }
+      ]
+    },
+    {
+      label: labels.view,
+      submenu: [
+        { role: 'reload', label: labels.reload },
+        { role: 'toggleDevTools', label: labels.devTools },
+        { type: 'separator' },
+        { role: 'resetZoom', label: labels.resetZoom },
+        { role: 'zoomIn', label: labels.zoomIn },
+        { role: 'zoomOut', label: labels.zoomOut },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: labels.fullscreen }
+      ]
+    },
+    {
+      label: labels.help,
+      submenu: [
+        {
+          label: labels.about,
+          click: async () => {
+            const options = {
+              type: 'info' as const,
+              title: labels.aboutTitle,
+              message: 'npmDesktopManager v1.0.0',
+              detail: labels.aboutDetail
+            }
+            const target = mainWindow && !mainWindow.isDestroyed()
+              ? mainWindow
+              : BrowserWindow.getFocusedWindow()
+
+            if (target) {
+              await dialog.showMessageBox(target, options)
+            } else {
+              await dialog.showMessageBox(options)
+            }
+          }
+        }
+      ]
+    }
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+function getStartupLanguageInfo(): StartupLanguageInfo {
+  const installerLanguage = readInstallerLanguage()
+  const isPortable = Boolean(
+    process.env.PORTABLE_EXECUTABLE_DIR ||
+    process.env.PORTABLE_EXECUTABLE_FILE ||
+    process.env.PORTABLE_EXECUTABLE_APP_FILENAME
+  )
+
+  if (installerLanguage) {
+    return {
+      language: installerLanguage,
+      source: 'installer',
+      shouldPrompt: false,
+      isPackaged: app.isPackaged,
+      isPortable
+    }
+  }
+
+  return {
+    language: 'en-US',
+    source: 'default',
+    shouldPrompt: true,
+    isPackaged: app.isPackaged,
+    isPortable
+  }
+}
+
+function readInstallerLanguage(): AppLanguage | null {
+  const candidates = [
+    join(process.resourcesPath || '', 'default-language.json'),
+    join(mainDir, '../default-language.json'),
+    join(mainDir, '../../default-language.json')
+  ]
+
+  for (const filePath of candidates) {
+    try {
+      if (!existsSync(filePath)) continue
+
+      const data = JSON.parse(readFileSync(filePath, 'utf8')) as { language?: string }
+      if (data.language === 'zh-CN') return 'zh-CN'
+      if (data.language === 'en-US') return 'en-US'
+    } catch {
+    }
+  }
+
+  return null
 }

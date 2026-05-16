@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { createLogId, formatCommand, sendCommandLog } from './commandLogger'
-import { commandEnv, decodeCommandChunk } from './encoding'
+import { CommandOutputDecoder, commandEnv } from './encoding'
 
 export interface LoggedCommandResult {
   stdout: string
@@ -13,6 +13,22 @@ export interface LoggedCommandOptions {
   displayBin?: string
   maxBuffer?: number
   log?: boolean
+}
+
+export interface ShellFreeCommand {
+  bin: string
+  args: string[]
+}
+
+export function resolveShellFreeCommand(bin: string, args: string[]): ShellFreeCommand {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin)) {
+    return {
+      bin: 'cmd.exe',
+      args: ['/d', '/s', '/c', formatCmdCommand(bin, args)]
+    }
+  }
+
+  return { bin, args }
 }
 
 export function runLoggedCommand(
@@ -29,6 +45,8 @@ export function runLoggedCommand(
   } = options
   const logId = createLogId()
   const command = formatCommand(displayBin, args)
+  const stdoutDecoder = new CommandOutputDecoder()
+  const stderrDecoder = new CommandOutputDecoder()
   let stdout = ''
   let stderr = ''
   let settled = false
@@ -59,10 +77,11 @@ export function runLoggedCommand(
   emit('running')
 
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, {
+    const spawnCommand = resolveShellFreeCommand(bin, args)
+    const child = spawn(spawnCommand.bin, spawnCommand.args, {
       cwd: cwd || process.cwd(),
       env: commandEnv(env),
-      shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(bin),
+      shell: false,
       windowsHide: true
     })
 
@@ -77,7 +96,7 @@ export function runLoggedCommand(
     }
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += decodeCommandChunk(chunk)
+      stdout = stdoutDecoder.write(chunk)
       if (stdout.length + stderr.length > maxBuffer) {
         child.kill()
         fail(new Error(`Command output exceeded ${Math.round(maxBuffer / 1024 / 1024)}MB`))
@@ -87,7 +106,7 @@ export function runLoggedCommand(
     })
 
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += decodeCommandChunk(chunk)
+      stderr = stderrDecoder.write(chunk)
       if (stdout.length + stderr.length > maxBuffer) {
         child.kill()
         fail(new Error(`Command output exceeded ${Math.round(maxBuffer / 1024 / 1024)}MB`))
@@ -123,4 +142,20 @@ export function runLoggedCommand(
       reject(error)
     })
   })
+}
+
+function formatCmdCommand(bin: string, args: string[]): string {
+  return [bin, ...args].map(formatCmdArg).join(' ')
+}
+
+function formatCmdArg(arg: string): string {
+  if (arg.length === 0) return '""'
+
+  const safe = arg.replace(/[\r\n]/g, '')
+  const escaped = safe
+    .replace(/\^/g, '^^')
+    .replace(/"/g, '\\"')
+    .replace(/[&|<>()]/g, '^$&')
+
+  return /\s|["&|<>()^]/.test(safe) ? `"${escaped}"` : escaped
 }

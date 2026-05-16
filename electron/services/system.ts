@@ -2,11 +2,13 @@ import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { app } from 'electron'
 import { resolveToolBin } from './toolchain'
+import { resolveShellFreeCommand } from './commandRunner'
 import { commandEnv, decodeCommandChunk } from './encoding'
 
 const execFileAsync = promisify(execFile)
 function run(bin: string, args: string[] = [], cwd?: string): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync(bin, args, {
+  const command = resolveShellFreeCommand(bin, args)
+  return execFileAsync(command.bin, command.args, {
     cwd,
     env: commandEnv(),
     maxBuffer: 1024 * 1024 * 10,
@@ -20,21 +22,29 @@ function run(bin: string, args: string[] = [], cwd?: string): Promise<{ stdout: 
 
 export class SystemService {
   async getNpmInfo(): Promise<any> {
-    try {
-      const npmBin = await resolveToolBin('npm')
-      const { stdout: npmVersion } = await run(npmBin, ['--version'])
-      const { stdout: nodeVersion } = await run('node', ['--version'])
-      
-      return {
-        npmVersion: npmVersion.trim(),
-        nodeVersion: nodeVersion.trim(),
-        platform: process.platform,
-        arch: process.arch,
-        electronVersion: app.getVersion()
-      }
-    } catch (error) {
-      throw new Error('Failed to get npm info')
+    const info: Record<string, string> = {
+      npmVersion: '',
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      electronVersion: process.versions.electron || app.getVersion()
     }
+
+    try {
+      const { stdout } = await run(await resolveToolBin('npm'), ['--version'])
+      info.npmVersion = stdout.trim()
+    } catch (error: any) {
+      info.npmError = readableError(error)
+    }
+
+    try {
+      const { stdout } = await run('node', ['--version'])
+      info.nodeVersion = stdout.trim() || info.nodeVersion
+    } catch (error: any) {
+      info.nodeError = readableError(error)
+    }
+
+    return info
   }
 
   async getCachePath(): Promise<string> {
@@ -90,4 +100,10 @@ export class SystemService {
 function decodeBuffer(value: Buffer | string): string {
   if (typeof value === 'string') return value
   return decodeCommandChunk(value)
+}
+
+function readableError(error: any): string {
+  const stdout = error?.stdout ? decodeBuffer(error.stdout) : ''
+  const stderr = error?.stderr ? decodeBuffer(error.stderr) : ''
+  return (stderr || stdout || error?.message || String(error)).trim()
 }

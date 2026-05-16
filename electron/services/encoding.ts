@@ -17,6 +17,29 @@ export function commandEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 export function decodeCommandChunk(chunk: Buffer): string {
+  return decodeCommandBuffer(chunk)
+}
+
+export class CommandOutputDecoder {
+  private readonly utf8Decoder = new TextDecoder('utf-8')
+  private readonly chunks: Buffer[] = []
+  private byteLength = 0
+  private text = ''
+
+  write(chunk: Buffer): string {
+    if (process.platform !== 'win32') {
+      this.text += this.utf8Decoder.decode(chunk, { stream: true })
+      return this.text
+    }
+
+    this.chunks.push(Buffer.from(chunk))
+    this.byteLength += chunk.length
+    this.text = decodeCommandBuffer(Buffer.concat(this.chunks, this.byteLength))
+    return this.text
+  }
+}
+
+function decodeCommandBuffer(chunk: Buffer): string {
   const utf8 = new TextDecoder('utf-8').decode(chunk)
   if (process.platform === 'win32') {
     try {

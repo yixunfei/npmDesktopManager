@@ -15,6 +15,8 @@ import {
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { useCommandLogStore, CommandLogEntry } from '../../stores/commandLogStore'
+import { translateText, useTextT } from '../../i18n'
+import { useSettingsStore } from '../../stores/settingsStore'
 import styles from './CommandLogWindow.module.css'
 
 const { Text } = Typography
@@ -24,6 +26,8 @@ const lineBreak = '\r\n'
 const CommandLogWindow: React.FC = () => {
   const currentPath = useAppStore((state) => state.currentPath)
   const { logs, visible, toggleVisible, clearLogs } = useCommandLogStore()
+  const language = useSettingsStore((state) => state.language)
+  const text = useTextT()
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
   const terminalIdRef = useRef<string>('')
@@ -56,7 +60,10 @@ const CommandLogWindow: React.FC = () => {
 
     const handleTerminalExit = (data: TerminalExitData) => {
       if (!isMounted || data.id !== terminalIdRef.current) return
-      setTerminalBuffer((prev) => `${prev}${lineBreak}[进程已退出，退出码 ${data.code ?? '未知'}]${lineBreak}`)
+      const currentLanguage = useSettingsStore.getState().language
+      const exitCode = data.code ?? translateText(currentLanguage, '未知')
+      const exitMessage = translateText(currentLanguage, `[进程已退出，退出码 ${exitCode}]`)
+      setTerminalBuffer((prev) => `${prev}${lineBreak}${exitMessage}${lineBreak}`)
       terminalIdRef.current = ''
       setSession(null)
     }
@@ -181,18 +188,18 @@ const CommandLogWindow: React.FC = () => {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'running':
-        return '执行中'
+        return text('执行中')
       case 'success':
-        return '成功'
+        return text('成功')
       case 'error':
-        return '失败'
+        return text('失败')
       default:
-        return '未知'
+        return text('未知')
     }
   }
 
   const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    return new Date(timestamp).toLocaleTimeString(language, {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
@@ -211,10 +218,10 @@ const CommandLogWindow: React.FC = () => {
           onClick={toggleVisible}
           className={!visible && errorCount > 0 ? styles.alertButton : undefined}
         >
-          {visible ? '隐藏终端' : '终端'}
+          {visible ? text('隐藏终端') : text('终端')}
           {logs.length > 0 && (
             <Tag color={errorCount > 0 ? 'error' : runningCount > 0 ? 'processing' : 'success'} className={styles.toggleTag}>
-              {runningCount > 0 ? `${runningCount} 运行中` : logs.length}
+              {runningCount > 0 ? `${runningCount} ${text('运行中')}` : logs.length}
             </Tag>
           )}
         </Button>
@@ -227,16 +234,16 @@ const CommandLogWindow: React.FC = () => {
             title={
               <Space>
                 <ConsoleSqlOutlined />
-                <span>交互终端</span>
-                <Tag color={session ? 'processing' : 'default'}>{session ? session.shell : '未连接'}</Tag>
+                <span>{text('交互终端')}</span>
+                <Tag color={session ? 'processing' : 'default'}>{session ? session.shell : text('未连接')}</Tag>
               </Space>
             }
             extra={
               <Space>
-                <Tooltip title="重启终端会话">
+                <Tooltip title={text('重启终端会话')}>
                   <Button type="text" size="small" icon={<ReloadOutlined />} onClick={startTerminal} />
                 </Tooltip>
-                <Tooltip title={isMaximized ? '还原' : '最大化'}>
+                <Tooltip title={isMaximized ? text('还原') : text('最大化')}>
                   <Button
                     type="text"
                     size="small"
@@ -244,12 +251,12 @@ const CommandLogWindow: React.FC = () => {
                     onClick={() => setIsMaximized(!isMaximized)}
                   />
                 </Tooltip>
-                <Tooltip title="清空终端输出">
+                <Tooltip title={text('清空终端输出')}>
                   <Button type="text" size="small" icon={<ClearOutlined />} onClick={() => setTerminalBuffer('')} />
                 </Tooltip>
-                <Tooltip title="清空命令日志">
+                <Tooltip title={text('清空命令日志')}>
                   <Button size="small" icon={<ClearOutlined />} onClick={clearLogs}>
-                    清空日志
+                    {text('清空日志')}
                   </Button>
                 </Tooltip>
               </Space>
@@ -272,7 +279,7 @@ const CommandLogWindow: React.FC = () => {
                         {session?.cwd || currentPath}
                       </Text>
                     )}
-                    <Tooltip title={terminalCollapsed ? '展开交互终端' : '折叠交互终端'}>
+                    <Tooltip title={terminalCollapsed ? text('展开交互终端') : text('折叠交互终端')}>
                       <Button
                         type="text"
                         size="small"
@@ -285,7 +292,7 @@ const CommandLogWindow: React.FC = () => {
                 {!terminalCollapsed && (
                   <>
                     <div className={styles.terminalOutput}>
-                      <pre>{terminalBuffer || '终端启动中...'}</pre>
+                      <pre>{terminalBuffer || text('终端启动中...')}</pre>
                       <div ref={terminalEndRef} />
                     </div>
                     <div className={styles.commandRow}>
@@ -295,12 +302,12 @@ const CommandLogWindow: React.FC = () => {
                         onChange={(event) => setCommand(event.target.value)}
                         onPressEnter={sendCommand}
                         onKeyDown={handleCommandKeyDown}
-                        placeholder={`${promptText} 输入命令后按 Enter`}
+                        placeholder={`${promptText} ${text('输入命令后按 Enter')}`}
                         bordered={false}
                         className={styles.commandInput}
                       />
                       <Button type="primary" icon={<SendOutlined />} onClick={sendCommand} disabled={!session || !command.trim()}>
-                        执行
+                        {text('执行')}
                       </Button>
                     </div>
                   </>
@@ -314,14 +321,14 @@ const CommandLogWindow: React.FC = () => {
                 <div className={styles.paneHeader}>
                   <Space size={8}>
                     <ConsoleSqlOutlined />
-                    <span>命令日志</span>
+                    <span>{text('命令日志')}</span>
                     <Tag color={errorCount > 0 ? 'error' : runningCount > 0 ? 'processing' : 'success'}>
-                      {runningCount > 0 ? `${runningCount} 运行中` : '就绪'}
+                      {runningCount > 0 ? `${runningCount} ${text('运行中')}` : text('就绪')}
                     </Tag>
                   </Space>
                   <Space size={8}>
-                    {!logsCollapsed && <Text className={styles.logCount}>{logs.length} 条</Text>}
-                    <Tooltip title={logsCollapsed ? '展开命令日志' : '折叠命令日志'}>
+                    {!logsCollapsed && <Text className={styles.logCount}>{logs.length} {text('条')}</Text>}
+                    <Tooltip title={logsCollapsed ? text('展开命令日志') : text('折叠命令日志')}>
                       <Button
                         type="text"
                         size="small"
@@ -336,7 +343,7 @@ const CommandLogWindow: React.FC = () => {
                   <div className={styles.logsList}>
                     {logs.length === 0 ? (
                       <div className={styles.emptyState}>
-                        <Empty description="暂无命令执行记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        <Empty description={text('暂无命令执行记录')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       </div>
                     ) : (
                       logs.map((log) => (

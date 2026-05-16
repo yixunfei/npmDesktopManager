@@ -8,6 +8,7 @@ import { DependencyTreeModal } from '../../components/Package/DependencyTreeModa
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import { BatchVersionPreviewModal } from '../../components/Package/BatchVersionPreviewModal'
 import { SecurityAuditModal } from '../../components/Package/SecurityAuditModal'
+import { localizedModal } from '../../utils/localizedFeedback'
 import styles from './Global.module.css'
 
 const GlobalPage: React.FC = () => {
@@ -305,7 +306,7 @@ const GlobalPage: React.FC = () => {
       return
     }
 
-    Modal.confirm({
+    localizedModal.confirm({
       title: '确认批量卸载',
       content: `确定要卸载选中的 ${selectedRowKeys.length} 个包吗？`,
       onOk: async () => {
@@ -462,7 +463,7 @@ const GlobalPage: React.FC = () => {
               } else if (key === 'changelog') {
                 handleViewChangelog(record.name)
               } else if (key === 'uninstall') {
-                Modal.confirm({
+                localizedModal.confirm({
                   title: '确认卸载',
                   content: `确定要卸载 ${record.name} 吗？`,
                   onOk: () => handleUninstall(record.name)

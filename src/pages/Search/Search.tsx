@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AutoComplete, Button, Descriptions, Dropdown, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Tooltip, message } from 'antd'
+import { AutoComplete, Button, Descriptions, Dropdown, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Tooltip } from 'antd'
 import { DownloadOutlined, GlobalOutlined, HistoryOutlined, InfoCircleOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { usePackageStore } from '../../stores/packageStore'
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
+import { localizedMessage as message } from '../../utils/localizedFeedback'
 import styles from './Search.module.css'
 
 const { Search: SearchInput } = Input

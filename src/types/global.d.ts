@@ -1,6 +1,11 @@
 declare global {
   interface Window {
     electronAPI: {
+      app: {
+        getStartupLanguage: () => Promise<StartupLanguageInfo>
+        setMenuLanguage: (language: AppLanguage) => Promise<void>
+      }
+
       getDefaultPath: () => Promise<string>
       selectDirectory: () => Promise<string | null>
       
@@ -346,6 +351,15 @@ declare global {
   }
 
   type ToolName = 'npm' | 'pip' | 'maven'
+  type AppLanguage = 'zh-CN' | 'en-US'
+
+  interface StartupLanguageInfo {
+    language: AppLanguage
+    source: 'installer' | 'default'
+    shouldPrompt: boolean
+    isPackaged: boolean
+    isPortable: boolean
+  }
 
   interface ToolStatus {
     tool: ToolName

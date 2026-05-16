@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, message, Radio, AutoComplete } from 'antd'
+import { Descriptions, Button, Input, Divider, Alert, Tabs, Modal, Form, Tag, Spin, Table, Space, Tooltip, Select, Radio, AutoComplete } from 'antd'
 import {
   UserOutlined, SettingOutlined, 
   DeleteOutlined, SyncOutlined, FolderOpenOutlined,
@@ -12,6 +12,7 @@ import { useAppStore } from '../../stores/appStore'
 import { AppLanguage, useSettingsStore } from '../../stores/settingsStore'
 import GlobalToolchainPanel from '../../components/Toolchain/GlobalToolchainPanel'
 import { useT } from '../../i18n'
+import { localizedMessage as message } from '../../utils/localizedFeedback'
 import styles from './Settings.module.css'
 
 const SettingsPage: React.FC = () => {
@@ -379,11 +380,11 @@ const SettingsPage: React.FC = () => {
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Select<AppLanguage>
                   value={language}
-                  onChange={setLanguage}
+                  onChange={(value) => setLanguage(value)}
                   style={{ width: 220 }}
                   options={[
-                    { value: 'zh-CN', label: t('settings.languageChinese') },
-                    { value: 'en-US', label: t('settings.languageEnglish') }
+                    { value: 'en-US', label: t('settings.languageEnglish') },
+                    { value: 'zh-CN', label: t('settings.languageChinese') }
                   ]}
                 />
                 <span style={{ color: '#888', fontSize: 12 }}>{t('settings.languageDescription')}</span>
@@ -502,7 +503,7 @@ const SettingsPage: React.FC = () => {
           </div>
 
           <Alert
-            message="提示"
+            title="提示"
             description="设置已自动保存，并将在下次更新预览与执行时生效"
             type="info"
             showIcon
@@ -529,7 +530,7 @@ const SettingsPage: React.FC = () => {
           {currentUser ? (
             <div className={styles.userInfo}>
               <Alert
-                message={`已登录: ${currentUser}`}
+                title={`已登录: ${currentUser}`}
                 type="success"
                 showIcon
                 style={{ marginBottom: 16 }}
@@ -552,7 +553,7 @@ const SettingsPage: React.FC = () => {
           ) : (
             <div className={styles.loginPrompt}>
               <Alert
-                message="未登录"
+                title="未登录"
                 description="登录以发布包到 npm registry"
                 type="info"
                 showIcon
@@ -676,6 +677,15 @@ const SettingsPage: React.FC = () => {
       icon: <InfoCircleOutlined />,
       children: (
         <div className={styles.tabContent}>
+          {npmInfo.npmError && (
+            <Alert
+              title="npm 信息读取失败"
+              description={npmInfo.npmError}
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Descriptions bordered column={1}>
             <Descriptions.Item label="npm 版本">{npmInfo.npmVersion || 'N/A'}</Descriptions.Item>
             <Descriptions.Item label="Node 版本">{npmInfo.nodeVersion || 'N/A'}</Descriptions.Item>
