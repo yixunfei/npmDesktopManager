@@ -8,7 +8,8 @@ const MANAGER_ROUTES: Record<PackageManagerId, string> = {
   maven: '/maven',
   cargo: '/cargo',
   gradle: '/gradle',
-  go: '/go'
+  go: '/go',
+  native: '/native'
 }
 
 const MANAGER_OPTIONS: Array<{ label: string; value: PackageManagerId }> = [
@@ -17,7 +18,8 @@ const MANAGER_OPTIONS: Array<{ label: string; value: PackageManagerId }> = [
   { label: 'Maven', value: 'maven' },
   { label: 'Cargo', value: 'cargo' },
   { label: 'Gradle', value: 'gradle' },
-  { label: 'Go', value: 'go' }
+  { label: 'Go', value: 'go' },
+  { label: 'C/C++', value: 'native' }
 ]
 
 interface RuntimeManagerSwitchProps {

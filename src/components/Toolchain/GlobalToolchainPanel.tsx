@@ -10,7 +10,10 @@ const toolLabels: Record<ToolName, string> = {
   maven: 'Maven',
   cargo: 'Cargo / Rust',
   gradle: 'Gradle',
-  go: 'Go'
+  go: 'Go',
+  cmake: 'CMake',
+  vcpkg: 'vcpkg',
+  conan: 'Conan'
 }
 
 const placeholders: Partial<Record<ToolName, string>> = {
@@ -22,7 +25,11 @@ const placeholders: Partial<Record<ToolName, string>> = {
   go: '例如: C:\\Program Files\\Go 或 go.exe'
 }
 
-const tools: ToolName[] = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go']
+placeholders.cmake = 'Example: C:\\Program Files\\CMake\\bin or cmake.exe'
+placeholders.vcpkg = 'Example: C:\\vcpkg or vcpkg.exe'
+placeholders.conan = 'Example: C:\\Python\\Scripts or conan.exe'
+
+const tools: ToolName[] = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go', 'cmake', 'vcpkg', 'conan']
 const emptyPaths = Object.fromEntries(tools.map((tool) => [tool, ''])) as Record<ToolName, string>
 
 function pathsFromStatuses(statuses: ToolStatus[]): Record<ToolName, string> {

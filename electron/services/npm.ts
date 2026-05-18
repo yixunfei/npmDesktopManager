@@ -8,6 +8,7 @@ import { resolveToolBin } from './toolchain'
 const CACHE_TTL = 10 * 60 * 1000
 const packageInfoCache = new Map<string, { expiresAt: number; value: any }>()
 const packageSizeCache = new Map<string, { expiresAt: number; value: any }>()
+const versionMetadataCache = new Map<string, { expiresAt: number; value: any }>()
 
 export function setNpmServiceWindow(window: BrowserWindow | null) {
   setCommandLogWindow(window)
@@ -73,8 +74,12 @@ export class NpmService {
     }
   }
 
-  async search(query: string): Promise<any[]> {
-    const { stdout } = await this.executeNpm(['search', query, '--json', '--long'])
+  async search(query: string, limit?: number): Promise<any[]> {
+    const command = ['search', query, '--json', '--long']
+    if (limit && Number.isFinite(limit)) {
+      command.push(`--searchlimit=${Math.max(1, Math.min(Math.floor(limit), 250))}`)
+    }
+    const { stdout } = await this.executeNpm(command)
     return parseJson(stdout, [])
   }
 
@@ -258,11 +263,53 @@ export class NpmService {
 
   async getVersions(packageName: string): Promise<string[]> {
     try {
-      const { stdout } = await this.executeNpm(['view', packageName, 'versions', '--json'])
-      const versions = parseJson(stdout, [])
-      return Array.isArray(versions) ? versions.reverse() : [versions]
+      const metadata = await this.getVersionMetadata(packageName)
+      return metadata.versions.map((item: any) => item.version)
     } catch (error) {
       return []
+    }
+  }
+
+  async getVersionMetadata(packageName: string): Promise<any> {
+    const normalizedName = packageName.trim()
+    if (!normalizedName) {
+      return emptyVersionMetadata(packageName)
+    }
+
+    const cached = getCached(versionMetadataCache, normalizedName)
+    if (cached) return cached
+
+    try {
+      const { stdout } = await this.executeNpm([
+        'view',
+        normalizedName,
+        'versions',
+        'time',
+        'dist-tags',
+        'description',
+        '--json'
+      ])
+      const data = parseJson(stdout, {})
+      const versions = Array.isArray(data?.versions)
+        ? data.versions
+        : data?.versions
+          ? [data.versions]
+          : []
+      const time = data?.time && typeof data.time === 'object' ? data.time : {}
+      const distTags = data?.['dist-tags'] && typeof data['dist-tags'] === 'object' ? data['dist-tags'] : {}
+      const description = typeof data?.description === 'string' ? data.description : ''
+      const metadata = buildVersionMetadata(normalizedName, versions, time, distTags, description)
+      return setCached(versionMetadataCache, normalizedName, metadata)
+    } catch (error) {
+      try {
+        const { stdout } = await this.executeNpm(['view', normalizedName, 'versions', '--json'])
+        const versions = parseJson(stdout, [])
+        const versionList = Array.isArray(versions) ? versions : versions ? [versions] : []
+        const metadata = buildVersionMetadata(normalizedName, versionList, {}, {}, '')
+        return setCached(versionMetadataCache, normalizedName, metadata)
+      } catch {
+        return emptyVersionMetadata(normalizedName)
+      }
     }
   }
 
@@ -491,4 +538,91 @@ function formatBytes(bytes: number): string {
   const sizes = ['Bytes', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+function emptyVersionMetadata(packageName: string): any {
+  return {
+    name: packageName,
+    description: '',
+    distTags: {},
+    versions: [],
+    stable: [],
+    prerelease: [],
+    latest: ''
+  }
+}
+
+function buildVersionMetadata(
+  packageName: string,
+  versions: string[],
+  time: Record<string, string>,
+  distTags: Record<string, string>,
+  description: string
+): any {
+  const sortedVersions = [...new Set(versions.filter(Boolean))].sort((a, b) => {
+    const dateA = Date.parse(time[a] || '')
+    const dateB = Date.parse(time[b] || '')
+    if (Number.isFinite(dateA) && Number.isFinite(dateB) && dateA !== dateB) {
+      return dateB - dateA
+    }
+    return compareVersionLike(b, a)
+  })
+
+  const tagByVersion = new Map<string, string[]>()
+  Object.entries(distTags || {}).forEach(([tag, version]) => {
+    if (!version) return
+    const tags = tagByVersion.get(version) || []
+    tags.push(tag)
+    tagByVersion.set(version, tags)
+  })
+
+  const versionItems = sortedVersions.map((version) => {
+    const tags = tagByVersion.get(version) || []
+    const prerelease = isPrereleaseVersion(version)
+    return {
+      version,
+      date: time[version] || '',
+      tags,
+      prerelease,
+      channel: prerelease ? resolvePrereleaseChannel(version, tags) : 'stable'
+    }
+  })
+
+  const latest = distTags?.latest || versionItems.find((item) => !item.prerelease)?.version || versionItems[0]?.version || ''
+
+  return {
+    name: packageName,
+    description,
+    distTags: distTags || {},
+    versions: versionItems,
+    stable: versionItems.filter((item) => !item.prerelease),
+    prerelease: versionItems.filter((item) => item.prerelease),
+    latest
+  }
+}
+
+function isPrereleaseVersion(version: string): boolean {
+  return version.includes('-') || /\b(alpha|beta|rc|next|canary|experimental|preview|pre|dev|nightly|snapshot)\b/i.test(version)
+}
+
+function resolvePrereleaseChannel(version: string, tags: string[]): string {
+  const text = [version, ...tags].join(' ').toLowerCase()
+  const channels = ['alpha', 'beta', 'rc', 'next', 'canary', 'experimental', 'preview', 'nightly', 'snapshot', 'dev']
+  return channels.find((channel) => text.includes(channel)) || 'prerelease'
+}
+
+function compareVersionLike(a: string, b: string): number {
+  const parsedA = parseVersionParts(a)
+  const parsedB = parseVersionParts(b)
+  for (let index = 0; index < Math.max(parsedA.length, parsedB.length); index += 1) {
+    const diff = (parsedA[index] || 0) - (parsedB[index] || 0)
+    if (diff !== 0) return diff
+  }
+  return a.localeCompare(b)
+}
+
+function parseVersionParts(version: string): number[] {
+  const match = version.match(/\d+(?:\.\d+)*/)
+  if (!match) return []
+  return match[0].split('.').map((part) => Number(part) || 0)
 }

@@ -16,6 +16,7 @@ const MultiManager = lazy(() => import('./pages/MultiManager/MultiManager'))
 const Cargo = lazy(() => import('./pages/Cargo/Cargo'))
 const Gradle = lazy(() => import('./pages/Gradle/Gradle'))
 const Go = lazy(() => import('./pages/Go/Go'))
+const Native = lazy(() => import('./pages/Native/Native'))
 const Publish = lazy(() => import('./pages/Publish/Publish'))
 const Settings = lazy(() => import('./pages/Settings/Settings'))
 const ToolVersions = lazy(() => import('./pages/ToolVersions/ToolVersions'))
@@ -47,6 +48,7 @@ const App: React.FC = () => {
             <Route path="/cargo" element={<Cargo />} />
             <Route path="/gradle" element={<Gradle />} />
             <Route path="/go" element={<Go />} />
+            <Route path="/native" element={<Native />} />
             <Route path="/publish" element={<Publish />} />
             <Route path="/tool-versions" element={<ToolVersions />} />
             <Route path="/plugins" element={<PluginComponents />} />

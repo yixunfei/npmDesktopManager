@@ -31,6 +31,7 @@ export interface MavenAuditIssue {
 export interface MavenSearchResult extends MavenDependency {
   latestVersion?: string
   description?: string
+  repository?: string
 }
 
 export interface MavenDependencyTreeNode extends MavenDependency {
@@ -44,6 +45,29 @@ export interface MavenDeployArgs {
   repositoryUrl?: string
   skipTests?: boolean
   goals?: string
+}
+
+export type MavenSearchMode = 'startsWith' | 'contains' | 'exact' | 'keyword'
+export type MavenSearchScope = 'artifactId' | 'groupId' | 'coordinate' | 'all'
+export type MavenSearchSource = 'mavenCentral' | 'nexus'
+
+export interface MavenSearchOptions {
+  mode?: MavenSearchMode
+  scope?: MavenSearchScope
+  source?: MavenSearchSource
+  customUrl?: string
+  includeLocal?: boolean
+  limit?: number
+}
+
+const MAVEN_DEPENDENCY_PACKAGINGS = new Set(['jar', 'aar', 'war', 'ear', 'pom', 'bundle'])
+const DEFAULT_MAVEN_SEARCH_OPTIONS: Required<Omit<MavenSearchOptions, 'customUrl'>> & { customUrl: string } = {
+  mode: 'startsWith',
+  scope: 'artifactId',
+  source: 'mavenCentral',
+  customUrl: '',
+  includeLocal: false,
+  limit: 30
 }
 
 function dependencyKey(dep: Pick<MavenDependency, 'groupId' | 'artifactId'>): string {
@@ -191,48 +215,44 @@ export class MavenService {
     return stdout || stderr
   }
 
-  async search(query: string, cwd?: string): Promise<MavenSearchResult[]> {
+  async search(query: string, cwd?: string, options?: MavenSearchOptions): Promise<MavenSearchResult[]> {
     const normalized = query.trim()
     if (!normalized) return []
+    const searchOptions = normalizeMavenSearchOptions(options)
 
-    const [local, remote] = await Promise.allSettled([
-      this.searchLocal(normalized, cwd),
-      this.searchRemote(normalized)
-    ])
+    const tasks: Array<Promise<MavenSearchResult[]>> = [
+      this.searchRemote(normalized, searchOptions)
+    ]
+    if (searchOptions.includeLocal) {
+      tasks.unshift(this.searchLocal(normalized, cwd, searchOptions))
+    }
 
-    const localResults = local.status === 'fulfilled' ? local.value : []
-    const remoteResults = remote.status === 'fulfilled' ? remote.value : []
-    return uniqueMavenResults([...localResults, ...remoteResults]).slice(0, 20)
+    const [first, second] = await Promise.allSettled(tasks)
+
+    const firstResults = first.status === 'fulfilled' ? first.value : []
+    const secondResults = second?.status === 'fulfilled' ? second.value : []
+    return rankMavenResults(uniqueMavenResults([...firstResults, ...secondResults]), normalized, searchOptions).slice(0, searchOptions.limit)
   }
 
-  private async searchRemote(query: string): Promise<MavenSearchResult[]> {
-    const normalized = query.trim()
-    const searchQuery = buildMavenSearchQuery(normalized)
+  private async searchRemote(query: string, options: Required<Omit<MavenSearchOptions, 'customUrl'>> & { customUrl: string }): Promise<MavenSearchResult[]> {
     try {
-      const data = JSON.parse(await httpsGet(`https://search.maven.org/solrsearch/select?q=${encodeURIComponent(searchQuery)}&rows=12&wt=json`))
-      const docs = data.response?.docs || []
-      return uniqueMavenResults(docs.map((doc: any) => ({
-        groupId: doc.g,
-        artifactId: doc.a,
-        version: doc.latestVersion || '',
-        latestVersion: doc.latestVersion || '',
-        type: doc.p,
-        description: 'Maven Central'
-      })).filter((item: MavenSearchResult) => item.groupId && item.artifactId))
+      if (options.source === 'nexus') {
+        return await searchNexusRepository(query, options)
+      }
+      return await searchMavenCentral(query, options)
     } catch {
       return []
     }
   }
 
-  private async searchLocal(query: string, cwd?: string): Promise<MavenSearchResult[]> {
+  private async searchLocal(query: string, cwd: string | undefined, options: MavenSearchOptions): Promise<MavenSearchResult[]> {
     const results: MavenSearchResult[] = []
-    const normalized = query.toLowerCase()
 
     if (cwd) {
       try {
         const pom = await readFile(join(cwd, 'pom.xml'), 'utf-8')
         results.push(...parsePomDependencies(pom)
-          .filter((dep) => mavenResultMatches(dep, normalized))
+          .filter((dep) => mavenResultMatches(dep, query, options))
           .map((dep) => ({
             ...dep,
             latestVersion: dep.version,
@@ -244,7 +264,7 @@ export class MavenService {
 
     try {
       const repository = await this.localRepositoryFromSettings()
-      results.push(...await searchLocalMavenRepository(repository, normalized))
+      results.push(...await searchLocalMavenRepository(repository, query, options))
     } catch {
     }
 
@@ -499,7 +519,12 @@ export class MavenService {
 async function httpsGet(url: string): Promise<string> {
   const https = await import('https')
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    https.get(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'npmDesktopManager/1.0'
+      }
+    }, (res) => {
       let data = ''
       res.on('data', (chunk) => { data += chunk })
       res.on('end', () => resolve(data))
@@ -546,25 +571,213 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function buildMavenSearchQuery(query: string): string {
-  const [groupId, artifactId] = query.split(':').map((part) => part.trim())
-  if (groupId && artifactId) {
-    return `g:"${groupId}" AND a:"${artifactId}"`
+function normalizeMavenSearchOptions(options?: MavenSearchOptions): Required<Omit<MavenSearchOptions, 'customUrl'>> & { customUrl: string } {
+  return {
+    ...DEFAULT_MAVEN_SEARCH_OPTIONS,
+    ...options,
+    customUrl: options?.customUrl?.trim() || '',
+    limit: Math.min(Math.max(options?.limit || DEFAULT_MAVEN_SEARCH_OPTIONS.limit, 1), 100)
   }
-  if (groupId && query.includes(':')) {
-    return `g:"${groupId}"`
+}
+
+async function searchMavenCentral(query: string, options: Required<Omit<MavenSearchOptions, 'customUrl'>> & { customUrl: string }): Promise<MavenSearchResult[]> {
+  const searchQueries = buildMavenCentralQueries(query, options)
+  const batches: MavenSearchResult[][] = []
+
+  for (const searchQuery of searchQueries) {
+    const data = JSON.parse(await httpsGet(`https://search.maven.org/solrsearch/select?q=${encodeURIComponent(searchQuery)}&rows=${Math.min(options.limit * 3, 100)}&wt=json`))
+    const docs = data.response?.docs || []
+    batches.push(docs
+      .filter(isMavenDependencyDoc)
+      .map((doc: any) => ({
+        groupId: doc.g,
+        artifactId: doc.a,
+        version: doc.latestVersion || '',
+        latestVersion: doc.latestVersion || '',
+        type: doc.p,
+        description: 'Maven Central dependency',
+        repository: 'Maven Central'
+      }))
+      .filter((item: MavenSearchResult) => item.groupId && item.artifactId))
   }
+
+  return uniqueMavenResults(batches.flat())
+}
+
+async function searchNexusRepository(query: string, options: Required<Omit<MavenSearchOptions, 'customUrl'>> & { customUrl: string }): Promise<MavenSearchResult[]> {
+  if (!options.customUrl) return []
+  const baseUrl = options.customUrl.replace(/\/+$/, '')
+  const url = new URL(`${baseUrl}/service/rest/v1/search`)
+  url.searchParams.set('format', 'maven2')
+  url.searchParams.set('sort', 'version')
+  url.searchParams.set('direction', 'desc')
+  for (const [key, value] of nexusSearchParams(query, options)) {
+    url.searchParams.set(key, value)
+  }
+
+  const data = JSON.parse(await httpsGet(url.toString()))
+  const items = Array.isArray(data.items) ? data.items : []
+  return items
+    .map((item: any) => nexusItemToMavenResult(item, options.customUrl))
+    .filter((item: MavenSearchResult | null): item is MavenSearchResult => Boolean(item))
+    .filter(isMavenDependencyResult)
+}
+
+function buildMavenCentralQueries(query: string, options: MavenSearchOptions): string[] {
+  const parsed = parseMavenQuery(query)
+  const mode = options.mode || DEFAULT_MAVEN_SEARCH_OPTIONS.mode
+  const scope = parsed.artifactId ? 'coordinate' : options.scope || DEFAULT_MAVEN_SEARCH_OPTIONS.scope
+  const fallback = `${escapeSolrValue(query)} AND -p:"maven-plugin"`
+
+  if (scope === 'coordinate') {
+    if (parsed.groupId && parsed.artifactId) {
+      return [`g:"${escapeSolrPhrase(parsed.groupId)}" AND ${fieldQuery('a', parsed.artifactId, mode)} AND -p:"maven-plugin"`]
+    }
+    if (parsed.groupId) {
+      return [`g:${solrPattern(parsed.groupId, mode)} AND -p:"maven-plugin"`]
+    }
+  }
+
+  if (scope === 'groupId') return [`${fieldQuery('g', query, mode)} AND -p:"maven-plugin"`]
+  if (scope === 'artifactId') return [`${fieldQuery('a', query, mode)} AND -p:"maven-plugin"`]
+  if (scope === 'all') {
+    return [
+      `${fieldQuery('a', query, mode)} AND -p:"maven-plugin"`,
+      `${fieldQuery('g', query, mode)} AND -p:"maven-plugin"`,
+      fallback
+    ]
+  }
+
+  return [fallback]
+}
+
+function nexusSearchParams(query: string, options: MavenSearchOptions): Array<[string, string]> {
+  const parsed = parseMavenQuery(query)
+  const mode = options.mode || DEFAULT_MAVEN_SEARCH_OPTIONS.mode
+  const scope = parsed.artifactId ? 'coordinate' : options.scope || DEFAULT_MAVEN_SEARCH_OPTIONS.scope
+  const artifactQuery = parsed.artifactId || query
+
+  if (scope === 'coordinate') {
+    return [
+      ...(parsed.groupId ? [['maven.groupId', parsed.groupId] as [string, string]] : []),
+      ...(artifactQuery ? [['maven.artifactId', nexusPattern(artifactQuery, mode)] as [string, string]] : [])
+    ]
+  }
+  if (scope === 'groupId') return [['maven.groupId', nexusPattern(query, mode)]]
+  if (scope === 'artifactId') return [['maven.artifactId', nexusPattern(query, mode)]]
+  return [['q', query]]
+}
+
+function fieldQuery(field: 'g' | 'a', query: string, mode: MavenSearchMode): string {
+  if (mode === 'keyword') return escapeSolrValue(query)
+  if (mode === 'exact') return `${field}:"${escapeSolrPhrase(query)}"`
+  return `${field}:${solrPattern(query, mode)}`
+}
+
+function solrPattern(query: string, mode: MavenSearchMode): string {
+  const value = escapeSolrPattern(query)
+  if (mode === 'contains') return `${value}*`
+  if (mode === 'startsWith') return `${value}*`
+  if (mode === 'exact') return `"${escapeSolrPhrase(query)}"`
+  return escapeSolrValue(query)
+}
+
+function nexusPattern(query: string, mode: MavenSearchMode): string {
+  if (mode === 'contains') return `*${query}*`
+  if (mode === 'startsWith') return `${query}*`
   return query
 }
 
-function mavenResultMatches(dep: Pick<MavenDependency, 'groupId' | 'artifactId'>, normalizedQuery: string): boolean {
-  const coordinate = `${dep.groupId}:${dep.artifactId}`.toLowerCase()
-  return coordinate.includes(normalizedQuery)
-    || dep.groupId.toLowerCase().includes(normalizedQuery)
-    || dep.artifactId.toLowerCase().includes(normalizedQuery)
+function parseMavenQuery(query: string): { groupId: string; artifactId: string } {
+  const parts = query.split(':').map((part) => part.trim()).filter(Boolean)
+  return {
+    groupId: parts[0] || '',
+    artifactId: parts[1] || ''
+  }
 }
 
-async function searchLocalMavenRepository(repository: string, normalizedQuery: string): Promise<MavenSearchResult[]> {
+function escapeSolrPattern(value: string): string {
+  return value.trim().replace(/([+\-&|!(){}\[\]^"~?:\\/])/g, '\\$1').replace(/\s+/g, '\\ ')
+}
+
+function escapeSolrPhrase(value: string): string {
+  return value.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function escapeSolrValue(value: string): string {
+  return value.trim().split(/\s+/).map(escapeSolrPattern).filter(Boolean).join(' ')
+}
+
+function nexusItemToMavenResult(item: any, repository: string): MavenSearchResult | null {
+  const coordinates = item?.maven2 || {}
+  const groupId = coordinates.groupId || item.group || ''
+  const artifactId = coordinates.artifactId || item.name || ''
+  if (!groupId || !artifactId) return null
+
+  return {
+    groupId,
+    artifactId,
+    version: item.version || coordinates.version || '',
+    latestVersion: item.version || coordinates.version || '',
+    type: coordinates.extension || item.assets?.[0]?.maven2?.extension || 'jar',
+    description: `Nexus dependency (${item.repository || repository})`,
+    repository: item.repository || repository
+  }
+}
+
+function isMavenDependencyResult(item: MavenSearchResult): boolean {
+  return isMavenDependencyDoc({ g: item.groupId, a: item.artifactId, p: item.type })
+}
+
+function mavenResultMatches(dep: Pick<MavenDependency, 'groupId' | 'artifactId'>, query: string, options: MavenSearchOptions): boolean {
+  const normalizedQuery = query.toLowerCase()
+  const mode = options.mode || DEFAULT_MAVEN_SEARCH_OPTIONS.mode
+  const scope = query.includes(':') ? 'coordinate' : options.scope || DEFAULT_MAVEN_SEARCH_OPTIONS.scope
+  const coordinate = `${dep.groupId}:${dep.artifactId}`.toLowerCase()
+  const values = scope === 'artifactId'
+    ? [dep.artifactId.toLowerCase()]
+    : scope === 'groupId'
+      ? [dep.groupId.toLowerCase()]
+      : scope === 'coordinate'
+        ? [coordinate]
+        : [dep.artifactId.toLowerCase(), dep.groupId.toLowerCase(), coordinate]
+  return values.some((value) => matchesText(value, normalizedQuery, mode))
+}
+
+function matchesText(value: string, query: string, mode: MavenSearchMode = 'startsWith'): boolean {
+  if (mode === 'exact') return value === query
+  if (mode === 'contains' || mode === 'keyword') return value.includes(query)
+  return value.startsWith(query)
+}
+
+function rankMavenResults(items: MavenSearchResult[], query: string, options: MavenSearchOptions): MavenSearchResult[] {
+  const normalized = query.toLowerCase()
+  const mode = options.mode || DEFAULT_MAVEN_SEARCH_OPTIONS.mode
+  return [...items].sort((a, b) => {
+    const aScore = mavenResultScore(a, normalized, mode)
+    const bScore = mavenResultScore(b, normalized, mode)
+    if (aScore !== bScore) return bScore - aScore
+    return `${a.groupId}:${a.artifactId}`.localeCompare(`${b.groupId}:${b.artifactId}`)
+  })
+}
+
+function mavenResultScore(item: MavenSearchResult, query: string, mode: MavenSearchMode): number {
+  const artifact = item.artifactId.toLowerCase()
+  const group = item.groupId.toLowerCase()
+  const coordinate = `${group}:${artifact}`
+  let score = 0
+  if (artifact === query) score += 100
+  if (artifact.startsWith(query)) score += 80
+  if (artifact.includes(query)) score += 50
+  if (coordinate.startsWith(query)) score += 30
+  if (group.includes(query)) score += 10
+  if (item.repository === 'Maven Central') score += 4
+  if (mode === 'startsWith' && artifact.startsWith(query)) score += 8
+  if (item.type === 'jar' || item.type === 'bundle') score += 3
+  return score
+}
+
+async function searchLocalMavenRepository(repository: string, query: string, options: MavenSearchOptions): Promise<MavenSearchResult[]> {
   const results: MavenSearchResult[] = []
   let visited = 0
   const maxVisited = 5000
@@ -591,7 +804,7 @@ async function searchLocalMavenRepository(repository: string, normalizedQuery: s
         latestVersion: newestVersion(versionEntries.map((entry) => entry.name)),
         description: 'Local Maven repository'
       }
-      if (mavenResultMatches(dep, normalizedQuery)) {
+      if (!artifactId.endsWith('-maven-plugin') && mavenResultMatches(dep, query, options)) {
         results.push(dep)
       }
       return
@@ -625,6 +838,14 @@ function newestVersion(versions: string[]): string {
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
   return sorted[sorted.length - 1] || ''
+}
+
+function isMavenDependencyDoc(doc: any): boolean {
+  if (!doc?.g || !doc?.a) return false
+  if (doc.p === 'maven-plugin') return false
+  if (typeof doc.a === 'string' && doc.a.endsWith('-maven-plugin')) return false
+  if (doc.p && !MAVEN_DEPENDENCY_PACKAGINGS.has(doc.p)) return false
+  return true
 }
 
 function parseDependencyCheckReport(content: string): MavenAuditIssue[] {

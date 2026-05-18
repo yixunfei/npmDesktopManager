@@ -3,7 +3,7 @@ import { access, mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { runLoggedCommand } from './commandRunner'
 
-export const TOOL_NAMES = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go'] as const
+export const TOOL_NAMES = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go', 'cmake', 'vcpkg', 'conan'] as const
 export type ToolName = typeof TOOL_NAMES[number]
 
 export type ToolchainConfig = Partial<Record<ToolName, string>>
@@ -23,7 +23,10 @@ const DEFAULT_DOWNLOADS: Record<ToolName, string> = {
   maven: 'https://maven.apache.org/download.cgi',
   cargo: 'https://www.rust-lang.org/tools/install',
   gradle: 'https://gradle.org/install/',
-  go: 'https://go.dev/dl/'
+  go: 'https://go.dev/dl/',
+  cmake: 'https://cmake.org/download/',
+  vcpkg: 'https://learn.microsoft.com/vcpkg/get_started/get-started',
+  conan: 'https://conan.io/downloads'
 }
 
 const DEFAULT_BINS: Record<ToolName, string> = {
@@ -32,7 +35,10 @@ const DEFAULT_BINS: Record<ToolName, string> = {
   maven: process.platform === 'win32' ? 'mvn.cmd' : 'mvn',
   cargo: process.platform === 'win32' ? 'cargo.exe' : 'cargo',
   gradle: process.platform === 'win32' ? 'gradle.bat' : 'gradle',
-  go: process.platform === 'win32' ? 'go.exe' : 'go'
+  go: process.platform === 'win32' ? 'go.exe' : 'go',
+  cmake: process.platform === 'win32' ? 'cmake.exe' : 'cmake',
+  vcpkg: process.platform === 'win32' ? 'vcpkg.exe' : 'vcpkg',
+  conan: process.platform === 'win32' ? 'conan.exe' : 'conan'
 }
 
 export async function getToolchainConfig(projectPath?: string): Promise<ToolchainConfig> {
@@ -188,7 +194,7 @@ async function getCheckCandidates(tool: ToolName, configuredPath?: string): Prom
 }
 
 function directoryBinCandidates(tool: ToolName, directory: string): string[] {
-  if (tool === 'maven' || tool === 'gradle' || tool === 'cargo' || tool === 'go') {
+  if (tool === 'maven' || tool === 'gradle' || tool === 'cargo' || tool === 'go' || tool === 'cmake' || tool === 'vcpkg' || tool === 'conan') {
     return [
       join(directory, DEFAULT_BINS[tool]),
       join(directory, 'bin', DEFAULT_BINS[tool])
@@ -200,7 +206,8 @@ function directoryBinCandidates(tool: ToolName, directory: string): string[] {
 
 function versionArgs(tool: ToolName): string[] {
   if (tool === 'maven' || tool === 'gradle') return ['-version']
-  if (tool === 'go') return ['version']
+  if (tool === 'go' || tool === 'cmake' || tool === 'conan') return ['--version']
+  if (tool === 'vcpkg') return ['version']
   return ['--version']
 }
 

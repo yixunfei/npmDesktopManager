@@ -10,7 +10,7 @@ declare global {
       selectDirectory: () => Promise<string | null>
       
       npm: {
-        search: (query: string) => Promise<any[]>
+        search: (query: string, limit?: number) => Promise<any[]>
         view: (packageName: string) => Promise<any>
         install: (args: InstallArgs) => Promise<string>
         uninstall: (args: UninstallArgs) => Promise<string>
@@ -32,6 +32,7 @@ declare global {
         checkAllOutdated: (cwd: string) => Promise<any>
         getPackageInfo: (packageName: string) => Promise<any>
         getVersions: (packageName: string) => Promise<string[]>
+        getVersionMetadata: (packageName: string) => Promise<NpmVersionMetadata>
         installVersion: (args: InstallVersionArgs) => Promise<string>
         globalOutdated: () => Promise<any>
         adduser: (registry?: string) => Promise<void>
@@ -82,7 +83,7 @@ declare global {
         tree: (cwd: string) => Promise<string>
         dependencyTree: (cwd: string) => Promise<MavenDependencyTreeNode | null>
         runGoal: (cwd: string, goal: string) => Promise<string>
-        search: (query: string, cwd?: string) => Promise<MavenSearchResult[]>
+        search: (query: string, cwd?: string, options?: MavenSearchOptions) => Promise<MavenSearchResult[]>
         versions: (groupId: string, artifactId: string) => Promise<string[]>
         info: (cwd?: string) => Promise<MavenGlobalInfo>
         effectiveSettings: (cwd?: string) => Promise<string>
@@ -121,7 +122,7 @@ declare global {
       gradle: {
         detect: (cwd: string) => Promise<{ hasGradleBuild: boolean; path: string }>
         list: (cwd: string) => Promise<GradleDependencyInfo[]>
-        search: (query: string) => Promise<GradleSearchResult[]>
+        search: (query: string, options?: MavenSearchOptions) => Promise<GradleSearchResult[]>
         versions: (groupId: string, artifactId: string) => Promise<string[]>
         addDependency: (args: GradleDependencyArgs) => Promise<void>
         updateDependency: (args: GradleDependencyArgs) => Promise<void>
@@ -144,6 +145,22 @@ declare global {
         graph: (cwd: string) => Promise<string>
         audit: (cwd: string) => Promise<{ raw: string; error?: string }>
         run: (cwd: string, commandLine: string) => Promise<string>
+      }
+
+      native: {
+        detect: (cwd: string) => Promise<NativeDetectResult>
+        list: (cwd: string) => Promise<NativeDependencyInfo[]>
+        search: (query: string) => Promise<NativeDependencyInfo[]>
+        install: (args: NativeInstallArgs) => Promise<string>
+        uninstall: (args: NativeRemoveArgs) => Promise<string>
+        run: (args: NativeRunArgs) => Promise<string>
+        configure: (cwd: string, buildDir?: string) => Promise<string>
+        build: (cwd: string, buildDir?: string) => Promise<string>
+      }
+
+      dependencyHealth: {
+        scan: (manager: DependencyHealthManager, cwd: string) => Promise<DependencyHealthScanResult>
+        fix: (cwd: string, action: DependencyHealthAction) => Promise<string>
       }
 
       terminal: {
@@ -248,6 +265,24 @@ declare global {
     package?: string
   }
 
+  interface NpmVersionInfo {
+    version: string
+    date?: string
+    tags: string[]
+    prerelease: boolean
+    channel: string
+  }
+
+  interface NpmVersionMetadata {
+    name: string
+    description: string
+    distTags: Record<string, string>
+    versions: NpmVersionInfo[]
+    stable: NpmVersionInfo[]
+    prerelease: NpmVersionInfo[]
+    latest: string
+  }
+
   interface PipPackageInfo {
     name: string
     version: string
@@ -349,6 +384,20 @@ declare global {
   interface MavenSearchResult extends MavenDependencyInfo {
     latestVersion?: string
     description?: string
+    repository?: string
+  }
+
+  type MavenSearchMode = 'startsWith' | 'contains' | 'exact' | 'keyword'
+  type MavenSearchScope = 'artifactId' | 'groupId' | 'coordinate' | 'all'
+  type MavenSearchSource = 'mavenCentral' | 'nexus'
+
+  interface MavenSearchOptions {
+    mode?: MavenSearchMode
+    scope?: MavenSearchScope
+    source?: MavenSearchSource
+    customUrl?: string
+    includeLocal?: boolean
+    limit?: number
   }
 
   interface MavenDependencyTreeNode extends MavenDependencyInfo {
@@ -397,8 +446,21 @@ declare global {
     code: number | null
   }
 
-  type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
-  type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+  type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'cmake' | 'vcpkg' | 'conan'
+  type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
+  type DependencyHealthManager = PackageManagerId
+  type DependencyHealthSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+  type DependencyHealthIssueType =
+    | 'cycle'
+    | 'version-conflict'
+    | 'peer-conflict'
+    | 'missing'
+    | 'invalid'
+    | 'extraneous'
+    | 'tooling'
+    | 'native-linkage'
+    | 'unmanaged'
+    | 'configuration'
   type AppLanguage = 'zh-CN' | 'en-US'
 
   interface StartupLanguageInfo {
@@ -425,6 +487,9 @@ declare global {
     cargo?: string
     gradle?: string
     go?: string
+    cmake?: string
+    vcpkg?: string
+    conan?: string
   }
 
   interface PackageManagerPlugin {
@@ -484,6 +549,7 @@ declare global {
   interface GradleSearchResult extends GradleDependencyInfo {
     latestVersion?: string
     description?: string
+    repository?: string
   }
 
   interface GradleDependencyArgs extends GradleDependencyInfo {
@@ -517,6 +583,95 @@ declare global {
   interface GoPackageArgs {
     modulePath: string
     cwd: string
+  }
+
+  interface NativeDetectResult {
+    hasNativeProject: boolean
+    hasCMakeLists: boolean
+    hasVcpkgManifest: boolean
+    hasConanfile: boolean
+    cmakePath: string
+    vcpkgPath: string
+    conanfilePath: string
+  }
+
+  type NativeDependencyManager = 'vcpkg' | 'conan' | 'cmake' | 'library'
+  type NativeLibraryKind = 'shared' | 'static' | 'import' | 'framework'
+
+  interface NativeDependencyInfo {
+    name: string
+    version?: string
+    manager: NativeDependencyManager
+    source?: string
+    kind?: NativeLibraryKind
+    path?: string
+    linkage?: 'dynamic' | 'static' | 'unknown'
+    requiredBy?: string
+  }
+
+  interface NativeInstallArgs {
+    cwd: string
+    manager: 'vcpkg' | 'conan'
+    name: string
+    version?: string
+    feature?: string
+  }
+
+  interface NativeRemoveArgs {
+    cwd: string
+    manager: 'vcpkg' | 'conan'
+    name: string
+  }
+
+  interface NativeRunArgs {
+    cwd: string
+    tool: 'cmake' | 'vcpkg' | 'conan'
+    commandLine: string
+  }
+
+  interface DependencyHealthAction {
+    id: string
+    label: string
+    kind: 'command' | 'api' | 'openFile' | 'copy' | 'manual'
+    description?: string
+    command?: {
+      tool: ToolName
+      args: string[]
+      displayBin?: string
+    }
+    target?: string
+    payload?: string
+  }
+
+  interface DependencyHealthIssue {
+    id: string
+    manager: DependencyHealthManager
+    type: DependencyHealthIssueType
+    severity: DependencyHealthSeverity
+    dependency?: string
+    title: string
+    description: string
+    suggestion: string
+    paths?: string[]
+    actions: DependencyHealthAction[]
+  }
+
+  interface DependencyHealthSummary {
+    total: number
+    critical: number
+    high: number
+    medium: number
+    low: number
+    info: number
+  }
+
+  interface DependencyHealthScanResult {
+    manager: DependencyHealthManager
+    cwd: string
+    scannedAt: string
+    summary: DependencyHealthSummary
+    issues: DependencyHealthIssue[]
+    raw?: string
   }
   
   interface FileChangeData {

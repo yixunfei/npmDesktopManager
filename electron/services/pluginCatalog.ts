@@ -3,7 +3,7 @@ import { access, mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { checkTools, ToolName } from './toolchain'
 
-export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
 
 export interface PackageManagerPlugin {
   id: PackageManagerId
@@ -100,6 +100,18 @@ const PLUGIN_DEFINITIONS: Array<Omit<PackageManagerPlugin, 'enabled' | 'detected
     capabilities: ['modules', 'versions', 'tidy', 'graph', 'vulnerability scan'],
     scenarios: ['cloud services', 'CLI', 'microservices'],
     builtIn: true
+  },
+  {
+    id: 'native',
+    name: 'C/C++ Native',
+    language: 'C / C++',
+    packageManager: 'CMake / vcpkg / Conan',
+    tools: ['cmake', 'vcpkg', 'conan'],
+    manifestFiles: ['CMakeLists.txt', 'vcpkg.json', 'conanfile.txt', 'conanfile.py'],
+    lockFiles: ['vcpkg-lock.json', 'conan.lock'],
+    capabilities: ['native dependencies', 'dynamic libraries', 'static libraries', 'CMake build', 'vcpkg', 'Conan'],
+    scenarios: ['systems', 'desktop native', 'game engines', 'embedded', 'shared libraries'],
+    builtIn: true
   }
 ]
 
@@ -117,11 +129,14 @@ export class PluginCatalogService {
     return await Promise.all(PLUGIN_DEFINITIONS.map(async (definition) => {
       const toolStatuses = definition.tools.map((tool) => statusMap.get(tool)).filter(Boolean)
       const primaryStatus = toolStatuses[0]
+      const available = definition.id === 'native'
+        ? toolStatuses.some((status) => status?.available)
+        : definition.tools.every((tool) => statusMap.get(tool)?.available)
       return {
         ...definition,
         enabled: !disabled.has(definition.id),
         detected: projectPath ? await this.isDetected(definition.id, projectPath) : false,
-        available: toolStatuses.every((status) => status?.available),
+        available,
         version: primaryStatus?.version,
         configuredPath: primaryStatus?.configuredPath,
         message: primaryStatus?.message

@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Card, Empty, Input, Space, Tag, Tooltip, Typography } from 'antd'
+import { Button, Card, Empty, Input, Modal, Segmented, Space, Tag, Tooltip, Typography } from 'antd'
 import {
+  CheckOutlined,
   ClearOutlined,
   CodeOutlined,
   ConsoleSqlOutlined,
   DownOutlined,
+  DeleteOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
+  InfoCircleOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
   SendOutlined,
+  ToolOutlined,
   UpOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
@@ -22,10 +26,11 @@ import styles from './CommandLogWindow.module.css'
 const { Text } = Typography
 
 const lineBreak = '\r\n'
+type LogFilter = 'all' | 'error' | 'running' | 'success'
 
 const CommandLogWindow: React.FC = () => {
   const currentPath = useAppStore((state) => state.currentPath)
-  const { logs, visible, toggleVisible, clearLogs, setVisible } = useCommandLogStore()
+  const { logs, visible, toggleVisible, clearLogs, clearStatus, clearResolved, setVisible, updateLog, removeLog } = useCommandLogStore()
   const language = useSettingsStore((state) => state.language)
   const text = useTextT()
   const terminalEndRef = useRef<HTMLDivElement>(null)
@@ -40,9 +45,16 @@ const CommandLogWindow: React.FC = () => {
   const [terminalCollapsed, setTerminalCollapsed] = useState(false)
   const [logsCollapsed, setLogsCollapsed] = useState(false)
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set())
+  const [logFilter, setLogFilter] = useState<LogFilter>('all')
 
   const runningCount = useMemo(() => logs.filter((log) => log.status === 'running').length, [logs])
-  const errorCount = useMemo(() => logs.filter((log) => log.status === 'error').length, [logs])
+  const errorCount = useMemo(() => logs.filter((log) => log.status === 'error' && !log.resolved).length, [logs])
+  const resolvedCount = useMemo(() => logs.filter((log) => log.resolved).length, [logs])
+  const visibleLogs = useMemo(() => {
+    if (logFilter === 'all') return logs
+    if (logFilter === 'error') return logs.filter((log) => log.status === 'error' && !log.resolved)
+    return logs.filter((log) => log.status === logFilter)
+  }, [logFilter, logs])
 
   useEffect(() => {
     const { addLog } = useCommandLogStore.getState()
@@ -215,6 +227,52 @@ const CommandLogWindow: React.FC = () => {
 
   const hasOutput = (log: CommandLogEntry) => !!(log.output || log.error)
   const promptText = `${session?.shell === 'PowerShell' ? 'PS ' : ''}${session?.cwd || currentPath || '~'}>`
+  const sendTerminalCommand = async (value: string) => {
+    if (!value.trim()) return
+    if (!terminalIdRef.current) {
+      await startTerminal()
+    }
+
+    const sessionId = terminalIdRef.current
+    if (!sessionId) return
+
+    setTerminalBuffer((prev) => `${prev}${lineBreak}> ${value}${lineBreak}`)
+    await window.electronAPI.terminal.write(sessionId, `${value}\n`)
+  }
+
+  const retryLog = async (log: CommandLogEntry) => {
+    try {
+      await sendTerminalCommand(log.command)
+      updateLog(log.id, { repairStatus: 'sent' })
+    } catch {
+      updateLog(log.id, { repairStatus: 'failed' })
+    }
+  }
+
+  const repairLog = async (log: CommandLogEntry) => {
+    const repair = suggestRepair(log)
+    if (!repair) return
+    Modal.confirm({
+      title: repair.title,
+      content: (
+        <Space orientation="vertical" style={{ width: '100%' }}>
+          <Text type="secondary">{repair.description}</Text>
+          <Text code className={styles.repairCommand}>{repair.command}</Text>
+        </Space>
+      ),
+      okText: text('执行'),
+      cancelText: text('取消'),
+      onOk: async () => {
+        updateLog(log.id, { repairStatus: 'running' })
+        try {
+          await sendTerminalCommand(repair.command)
+          updateLog(log.id, { repairStatus: 'sent' })
+        } catch {
+          updateLog(log.id, { repairStatus: 'failed' })
+        }
+      }
+    })
+  }
 
   return (
     <>
@@ -334,7 +392,12 @@ const CommandLogWindow: React.FC = () => {
                     </Tag>
                   </Space>
                   <Space size={8}>
-                    {!logsCollapsed && <Text className={styles.logCount}>{logs.length} {text('条')}</Text>}
+                    {!logsCollapsed && (
+                      <>
+                        <Text className={styles.logCount}>{visibleLogs.length}/{logs.length} {text('条')}</Text>
+                        {resolvedCount > 0 && <Tag color="default">{resolvedCount} 已处理</Tag>}
+                      </>
+                    )}
                     <Tooltip title={logsCollapsed ? text('展开命令日志') : text('折叠命令日志')}>
                       <Button
                         type="text"
@@ -347,16 +410,41 @@ const CommandLogWindow: React.FC = () => {
                 </div>
 
                 {!logsCollapsed && (
-                  <div className={styles.logsList}>
-                    {logs.length === 0 ? (
+                  <>
+                    <div className={styles.logTools}>
+                      <Segmented<LogFilter>
+                        size="small"
+                        value={logFilter}
+                        onChange={setLogFilter}
+                        options={[
+                          { label: `全部 ${logs.length}`, value: 'all' },
+                          { label: `错误 ${errorCount}`, value: 'error' },
+                          { label: `运行 ${runningCount}`, value: 'running' },
+                          { label: '成功', value: 'success' }
+                        ]}
+                      />
+                      <Space size={6}>
+                        <Tooltip title="清理成功日志">
+                          <Button size="small" icon={<ClearOutlined />} onClick={() => clearStatus('success')} />
+                        </Tooltip>
+                        <Tooltip title="清理已处理错误">
+                          <Button size="small" icon={<CheckOutlined />} onClick={clearResolved} />
+                        </Tooltip>
+                      </Space>
+                    </div>
+                    <div className={styles.logsList}>
+                    {visibleLogs.length === 0 ? (
                       <div className={styles.emptyState}>
                         <Empty description={text('暂无命令执行记录')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                       </div>
                     ) : (
-                      logs.map((log) => (
+                      visibleLogs.map((log) => {
+                        const repair = suggestRepair(log)
+                        const outputParts = resolveOutputParts(log)
+                        return (
                         <div
                           key={log.id}
-                          className={`${styles.logEntry} ${styles[log.status] || ''} ${hasOutput(log) ? styles.clickableLog : ''}`}
+                          className={`${styles.logEntry} ${styles[log.status] || ''} ${log.resolved ? styles.resolvedLog : ''} ${hasOutput(log) ? styles.clickableLog : ''}`}
                           onClick={() => hasOutput(log) && toggleLogExpansion(log.id)}
                         >
                           <div className={styles.logHeader}>
@@ -365,8 +453,64 @@ const CommandLogWindow: React.FC = () => {
                                 {formatTime(log.timestamp)}
                               </Text>
                               <Tag color={getStatusColor(log.status)}>{getStatusText(log.status)}</Tag>
+                              {(log.repeatCount || 1) > 1 && <Tag color="warning">重复 {log.repeatCount}</Tag>}
+                              {log.resolved && <Tag color="default">已处理</Tag>}
+                              {log.repairStatus === 'running' && <Tag color="processing">修复中</Tag>}
+                              {log.repairStatus === 'sent' && <Tag color="blue">已发送修复</Tag>}
+                              {log.repairStatus === 'failed' && <Tag color="error">修复发送失败</Tag>}
                             </Space>
-                            {hasOutput(log) && (
+                            <Space size={4}>
+                              {log.status === 'error' && (
+                                <>
+                                  {repair && (
+                                    <Tooltip title={repair.title}>
+                                      <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<ToolOutlined />}
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          void repairLog(log)
+                                        }}
+                                      />
+                                    </Tooltip>
+                                  )}
+                                  <Tooltip title="重新执行该命令">
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<ReloadOutlined />}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        void retryLog(log)
+                                      }}
+                                    />
+                                  </Tooltip>
+                                  <Tooltip title={log.resolved ? '取消已处理' : '标记为已处理'}>
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      icon={<CheckOutlined />}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        updateLog(log.id, { resolved: !log.resolved })
+                                      }}
+                                    />
+                                  </Tooltip>
+                                </>
+                              )}
+                              <Tooltip title="删除此条日志">
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    removeLog(log.id)
+                                  }}
+                                />
+                              </Tooltip>
+                              {hasOutput(log) && (
                               <Button
                                 type="text"
                                 size="small"
@@ -376,22 +520,31 @@ const CommandLogWindow: React.FC = () => {
                                   toggleLogExpansion(log.id)
                                 }}
                               />
-                            )}
+                              )}
+                            </Space>
                           </div>
                           <Text code className={styles.commandText}>
                             {log.command}
                           </Text>
+                          {log.status === 'error' && !expandedLogs.has(log.id) && (
+                            <div className={styles.errorSummary}>
+                              <InfoCircleOutlined />
+                              <span>{summarizeError(log)}</span>
+                            </div>
+                          )}
                           {hasOutput(log) && expandedLogs.has(log.id) && (
                             <div className={styles.output}>
-                              {log.output && <pre className={styles.stdout}>{log.output}</pre>}
-                              {log.error && <pre className={styles.stderr}>{log.error}</pre>}
+                              {outputParts.output && <pre className={styles.stdout}>{outputParts.output}</pre>}
+                              {outputParts.error && <pre className={styles.stderr}>{outputParts.error}</pre>}
                             </div>
                           )}
                         </div>
-                      ))
+                        )
+                      })
                     )}
                     <div ref={logsEndRef} />
                   </div>
+                  </>
                 )}
               </section>
             </div>
@@ -403,3 +556,100 @@ const CommandLogWindow: React.FC = () => {
 }
 
 export default CommandLogWindow
+
+interface RepairSuggestion {
+  title: string
+  description: string
+  command: string
+}
+
+function suggestRepair(log: CommandLogEntry): RepairSuggestion | null {
+  if (log.status !== 'error') return null
+  const command = log.command.toLowerCase()
+  const output = `${log.output || ''}\n${log.error || ''}`.toLowerCase()
+
+  if (/npm|pnpm|yarn/.test(command) && /eresolve|peer dep|dependency conflict/.test(output)) {
+    return {
+      title: '使用 legacy peer deps 重试',
+      description: '适用于 npm peer dependency 冲突，会重新执行安装并跳过严格 peer 依赖解析。',
+      command: appendNpmFlag(log.command, '--legacy-peer-deps')
+    }
+  }
+
+  if (/npm|pnpm|yarn/.test(command) && /audit|vulnerab/.test(output)) {
+    return {
+      title: '尝试 npm audit fix',
+      description: '会让 npm 尝试修复可自动升级的安全问题。',
+      command: 'npm audit fix'
+    }
+  }
+
+  if (/cache|integrity|tarball|econnreset|etimedout|network|registry/.test(output)) {
+    return {
+      title: '校验 npm 缓存',
+      description: '适用于缓存、完整性或网络下载异常。先校验缓存，必要时再手动清理缓存。',
+      command: 'npm cache verify'
+    }
+  }
+
+  if (/enoent|not recognized|not found|无法将|不是内部或外部命令/.test(output)) {
+    return {
+      title: '检查工具版本',
+      description: '用于确认当前终端是否能访问 node 与 npm。',
+      command: 'node -v && npm -v'
+    }
+  }
+
+  return null
+}
+
+function appendNpmFlag(command: string, flag: string): string {
+  return command.includes(flag) ? command : `${command} ${flag}`
+}
+
+function summarizeError(log: CommandLogEntry): string {
+  const source = log.error || log.output || '暂无错误详情'
+  const line = source.split(/\r?\n/).map((item) => item.trim()).find(Boolean) || source
+  return line.length > 180 ? `${line.slice(0, 180)}...` : line
+}
+
+function resolveOutputParts(log: CommandLogEntry): { output?: string; error?: string } {
+  const output = collapseRepeatedLines(log.output)
+  const error = collapseRepeatedLines(log.error)
+
+  if (!output || !error) return { output, error }
+  if (normalizeOutput(output) === normalizeOutput(error)) return { error }
+  if (normalizeOutput(output).includes(normalizeOutput(error))) return { output }
+  if (normalizeOutput(error).includes(normalizeOutput(output))) return { error }
+  return { output, error }
+}
+
+function collapseRepeatedLines(value?: string): string | undefined {
+  if (!value) return undefined
+  const result: string[] = []
+  let previous = ''
+  let repeat = 0
+
+  value.split(/\r?\n/).forEach((line) => {
+    if (line === previous) {
+      repeat += 1
+      return
+    }
+    if (repeat > 0) {
+      result.push(`...上一行重复 ${repeat} 次`)
+    }
+    result.push(line)
+    previous = line
+    repeat = 0
+  })
+
+  if (repeat > 0) {
+    result.push(`...上一行重复 ${repeat} 次`)
+  }
+
+  return result.join('\n')
+}
+
+function normalizeOutput(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}

@@ -37,22 +37,28 @@ function buildElectron() {
   
   if (type === 'installer') {
     if (platform === 'win' || platform === 'current') {
-      command += ' --config.win.target=nsis';
+      command += ' nsis';
     } else if (platform === 'mac') {
-      command += ' --config.mac.target=dmg';
+      command += ' dmg';
     } else if (platform === 'linux') {
-      command += ' --config.linux.target=deb,rpm';
+      command += ' deb rpm';
     }
   } else if (type === 'portable') {
     if (platform === 'win' || platform === 'current') {
-      command += ' --config.win.target=portable';
+      command += ' portable';
     } else if (platform === 'mac') {
-      command += ' --config.mac.target=zip';
+      command += ' zip';
     } else if (platform === 'linux') {
-      command += ' --config.linux.target=AppImage';
+      command += ' AppImage';
     }
   } else if (type === 'all') {
-    command += ' --config.win.target=nsis,portable --config.mac.target=dmg,zip --config.linux.target=AppImage,deb,rpm';
+    if (platform === 'win' || platform === 'current') {
+      command += ' nsis portable';
+    } else if (platform === 'mac') {
+      command += ' dmg zip';
+    } else if (platform === 'linux') {
+      command += ' AppImage deb rpm';
+    }
   }
 
   command += ' --publish never';

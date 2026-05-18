@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { AutoComplete, Button, Empty, Spin, Modal, Form, Input, Switch, Select, Tag, Dropdown, Space, Tooltip, Table, Tabs, Card } from 'antd'
-import { ReloadOutlined, FolderOpenOutlined, PlusOutlined, SwapOutlined, FolderFilled, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, SyncOutlined, HistoryOutlined, SecurityScanOutlined, InfoCircleOutlined, DownloadOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { ReloadOutlined, FolderOpenOutlined, PlusOutlined, SwapOutlined, FolderFilled, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, SyncOutlined, HistoryOutlined, SecurityScanOutlined, InfoCircleOutlined, DownloadOutlined, ApartmentOutlined, CloudDownloadOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { usePackageStore, PackageInfo } from '../../stores/packageStore'
 import { resolvePackageUpdateTarget, useSettingsStore } from '../../stores/settingsStore'
@@ -8,11 +8,18 @@ import { useCommandLogStore } from '../../stores/commandLogStore'
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
 import { SecurityAuditModal } from '../../components/Package/SecurityAuditModal'
 import { DependencyTreeModal } from '../../components/Package/DependencyTreeModal'
+import { DependencyHealthModal } from '../../components/Package/DependencyHealthModal'
 import { BatchVersionPreviewModal } from '../../components/Package/BatchVersionPreviewModal'
+import { NpmVersionPicker } from '../../components/Package/NpmVersionPicker'
 import ProjectToolchainPanel from '../../components/Toolchain/ProjectToolchainPanel'
 import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
 import { localizedModal } from '../../utils/localizedFeedback'
+import { VERSION_PAGE_SIZE, VersionChannelFilter, toVersionOptions, versionsForFilter } from '../../utils/npmVersions'
+import { cleanPackageSummary, formatCompactNumber } from '../../utils/npmDisplay'
+import { useDependencyHealthReminder } from '../../hooks/useDependencyHealthReminder'
 import styles from './Project.module.css'
+
+const SEARCH_PAGE_SIZE = 10
 
 interface ProjectPageProps {
   hideToolchainPanel?: boolean
@@ -32,24 +39,37 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
   const [checkingAll, setCheckingAll] = useState(false)
   const [selectedPackage, setSelectedPackage] = useState<PackageInfo | null>(null)
   const [versions, setVersions] = useState<string[]>([])
+  const [versionMetadata, setVersionMetadata] = useState<NpmVersionMetadata | null>(null)
+  const [stableVersionPage, setStableVersionPage] = useState(1)
+  const [prereleaseVersionPage, setPrereleaseVersionPage] = useState(1)
   const [detailVisible, setDetailVisible] = useState(false)
   const [detailPackage, setDetailPackage] = useState<string>('')
   const [auditVisible, setAuditVisible] = useState(false)
   const [depTreeVisible, setDepTreeVisible] = useState(false)
+  const [healthVisible, setHealthVisible] = useState(false)
   const [packageSizes, setPackageSizes] = useState<Record<string, any>>({})
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [updatingSelected, setUpdatingSelected] = useState(false)
   const [previewVisible, setPreviewVisible] = useState(false)
   const [pendingUpdates, setPendingUpdates] = useState<PackageInfo[]>([])
   const [uninstallingSelected, setUninstallingSelected] = useState(false)
-  const [packageOptions, setPackageOptions] = useState<Array<{ value: string; label: string }>>([])
-  const [installVersionOptions, setInstallVersionOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [packageOptions, setPackageOptions] = useState<Array<{ value: string; label: React.ReactNode }>>([])
+  const [packageSearchQuery, setPackageSearchQuery] = useState('')
+  const [packageSearchPage, setPackageSearchPage] = useState(1)
+  const [packageSearchHasMore, setPackageSearchHasMore] = useState(false)
+  const [packageSearchLoadingMore, setPackageSearchLoadingMore] = useState(false)
+  const [installVersionOptions, setInstallVersionOptions] = useState<Array<{ value: string; label: React.ReactNode }>>([])
+  const [installVersionMetadata, setInstallVersionMetadata] = useState<NpmVersionMetadata | null>(null)
+  const [installVersionFilter, setInstallVersionFilter] = useState<VersionChannelFilter>('stable')
+  const [installVersionPage, setInstallVersionPage] = useState(1)
   
   const currentPath = useAppStore((state) => state.currentPath)
   const addNotification = useAppStore((state) => state.addNotification)
   const updateStrategy = useSettingsStore((state) => state.updateStrategy)
   const setTerminalVisible = useCommandLogStore((state) => state.setVisible)
   const { projectPackages, loading, fetchProjectPackages, installPackage, uninstallPackage, installSpecificVersion } = usePackageStore()
+
+  useDependencyHealthReminder('npm', currentPath, !!currentPath && projectPackages.length > 0)
   
   useEffect(() => {
     if (currentPath) {
@@ -293,16 +313,41 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
   const searchInstallPackages = async (query: string) => {
     if (!query.trim()) {
       setPackageOptions([])
+      setPackageSearchQuery('')
+      setPackageSearchPage(1)
+      setPackageSearchHasMore(false)
       return
     }
+    await loadPackageOptions(query, 1)
+  }
+
+  const loadPackageOptions = async (query: string, page: number) => {
+    const trimmedQuery = query.trim()
+    if (!trimmedQuery) return
     try {
-      const result = await window.electronAPI.npm.search(query)
-      setPackageOptions(uniqueByName(result).slice(0, 10).map((pkg: any) => ({
-        value: pkg.name,
-        label: `${pkg.name}${pkg.version ? ` (${pkg.version})` : ''}`
-      })))
+      const limit = page * SEARCH_PAGE_SIZE
+      const result = await window.electronAPI.npm.search(trimmedQuery, limit + 1)
+      const packages = uniqueByName(result)
+      const visiblePackages = packages.slice(0, limit)
+      const downloads = await loadSearchDownloads(visiblePackages)
+      const hasMore = packages.length > visiblePackages.length
+      setPackageSearchQuery(trimmedQuery)
+      setPackageSearchPage(page)
+      setPackageSearchHasMore(hasMore)
+      setPackageOptions(buildPackageOptions(visiblePackages, downloads))
     } catch {
       setPackageOptions([])
+      setPackageSearchHasMore(false)
+    }
+  }
+
+  const loadMorePackageOptions = async () => {
+    if (!packageSearchQuery || !packageSearchHasMore || packageSearchLoadingMore) return
+    setPackageSearchLoadingMore(true)
+    try {
+      await loadPackageOptions(packageSearchQuery, packageSearchPage + 1)
+    } finally {
+      setPackageSearchLoadingMore(false)
     }
   }
 
@@ -312,12 +357,42 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
     const rawName = String(packageName)
     const versionMark = rawName.startsWith('@') ? rawName.indexOf('@', 1) : rawName.indexOf('@')
     const name = versionMark > 0 ? rawName.slice(0, versionMark) : rawName
-    const versions = await window.electronAPI.npm.getVersions(name)
-    const options = versions.slice(0, 10).map((version) => ({ value: version, label: version }))
+    const metadata = await window.electronAPI.npm.getVersionMetadata(name)
+    setInstallVersionMetadata(metadata)
+    setInstallVersionPage(1)
+    const options = buildInstallVersionOptions(metadata, installVersionFilter, 1)
     setInstallVersionOptions(options)
     if (options[0]) {
       installForm.setFieldValue('version', options[0].value)
     }
+  }
+
+  const handleInstallVersionFilterChange = (filter: VersionChannelFilter) => {
+    setInstallVersionFilter(filter)
+    setInstallVersionPage(1)
+    if (installVersionMetadata) {
+      const options = buildInstallVersionOptions(installVersionMetadata, filter, 1)
+      setInstallVersionOptions(options)
+      installForm.setFieldValue('version', options[0]?.value)
+    }
+  }
+
+  const loadMoreInstallVersions = () => {
+    if (!installVersionMetadata) return
+    if (versionsForFilter(installVersionMetadata, installVersionFilter).length <= installVersionPage * VERSION_PAGE_SIZE) return
+    const nextPage = installVersionPage + 1
+    setInstallVersionPage(nextPage)
+    setInstallVersionOptions(buildInstallVersionOptions(installVersionMetadata, installVersionFilter, nextPage))
+  }
+
+  const handlePackagePopupScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (!isNearPopupBottom(event.currentTarget)) return
+    void loadMorePackageOptions()
+  }
+
+  const handleVersionPopupScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (!isNearPopupBottom(event.currentTarget)) return
+    loadMoreInstallVersions()
   }
   
   const handleRunScript = async (script: string) => {
@@ -457,9 +532,14 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
   
   const handleShowVersions = async (pkg: PackageInfo) => {
     setSelectedPackage(pkg)
+    setVersionMetadata(null)
+    setVersions([])
+    setStableVersionPage(1)
+    setPrereleaseVersionPage(1)
     try {
-      const versionList = await window.electronAPI.npm.getVersions(pkg.name)
-      setVersions(versionList)
+      const metadata = await window.electronAPI.npm.getVersionMetadata(pkg.name)
+      setVersionMetadata(metadata)
+      setVersions(metadata.versions.map((version) => version.version))
       setVersionVisible(true)
     } catch (error: any) {
       addNotification({
@@ -720,6 +800,9 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
           >
             依赖树
           </Button>
+          <Button icon={<WarningOutlined />} onClick={() => setHealthVisible(true)} disabled={!currentPath}>
+            依赖诊断
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
             刷新
           </Button>
@@ -810,15 +893,54 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
       >
         <Form form={installForm} onFinish={handleInstall} layout="vertical" initialValues={{ dev: false }}>
           <Form.Item name="package" label="包名" rules={[{ required: true, message: '请输入包名' }]}>
-            <AutoComplete options={packageOptions} onSearch={searchInstallPackages} placeholder="例如: lodash" />
+            <AutoComplete
+              options={packageOptions}
+              onSearch={searchInstallPackages}
+              onPopupScroll={handlePackagePopupScroll}
+              popupRender={(menu) => renderPagedPopup(menu, packageSearchHasMore, packageSearchLoadingMore, SEARCH_PAGE_SIZE)}
+              onChange={() => {
+                setInstallVersionMetadata(null)
+                setInstallVersionOptions([])
+                installForm.setFieldValue('version', undefined)
+              }}
+              placeholder="例如: lodash"
+            />
           </Form.Item>
           <Form.Item label="版本（可选）">
             <Space.Compact style={{ width: '100%' }}>
               <Form.Item name="version" noStyle>
-                <AutoComplete options={installVersionOptions} placeholder="默认 latest，或选择最近 10 个版本" style={{ width: '100%' }} />
+                <AutoComplete
+                  options={installVersionOptions}
+                  placeholder="默认 latest，稳定版优先；可加载更多或预览版"
+                  style={{ width: '100%' }}
+                  onPopupScroll={handleVersionPopupScroll}
+                  popupRender={(menu) => renderPagedPopup(
+                    menu,
+                    !!installVersionMetadata && versionsForFilter(installVersionMetadata, installVersionFilter).length > installVersionPage * VERSION_PAGE_SIZE,
+                    false,
+                    VERSION_PAGE_SIZE
+                  )}
+                />
               </Form.Item>
+              <Select
+                value={installVersionFilter}
+                onChange={handleInstallVersionFilterChange}
+                style={{ width: 120 }}
+                options={[
+                  { value: 'stable', label: '稳定版' },
+                  { value: 'prerelease', label: '预览版' },
+                  { value: 'all', label: '全部' }
+                ]}
+              />
               <Button onClick={loadInstallVersions}>获取版本</Button>
             </Space.Compact>
+            {installVersionMetadata && (
+              <Space className={styles.installVersionActions} wrap>
+                <Tag color="green">稳定版 {installVersionMetadata.stable.length}</Tag>
+                <Tag color="gold">预览版 {installVersionMetadata.prerelease.length}</Tag>
+                <Tag>{versionFilterLabel(installVersionFilter)}显示 {Math.min(versionsForFilter(installVersionMetadata, installVersionFilter).length, installVersionPage * VERSION_PAGE_SIZE)}</Tag>
+              </Space>
+            )}
           </Form.Item>
           <Form.Item name="dev" label="作为开发依赖" valuePropName="checked">
             <Switch />
@@ -859,25 +981,24 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
         open={versionVisible}
         onCancel={() => setVersionVisible(false)}
         footer={null}
-        width={500}
+        width={680}
       >
         <div className={styles.versionList}>
           <p style={{ marginBottom: 12, color: 'var(--text-secondary, #999)' }}>
             当前版本: <Tag color="blue">{selectedPackage?.version}</Tag>
           </p>
-          <Spin spinning={versions.length === 0}>
-            <div className={styles.versions}>
-              {versions.slice(0, 50).map(version => (
-                <Tag 
-                  key={version}
-                  className={styles.versionTag}
-                  color={version === selectedPackage?.version ? 'blue' : 'default'}
-                  onClick={() => handleInstallVersion(version)}
-                >
-                  {version}
-                </Tag>
-              ))}
-            </div>
+          <Spin spinning={versions.length === 0 && !versionMetadata}>
+            <NpmVersionPicker
+              stable={versionMetadata?.stable || []}
+              prerelease={versionMetadata?.prerelease || []}
+              currentVersion={selectedPackage?.version}
+              latestVersion={versionMetadata?.latest || selectedPackage?.latest}
+              stablePage={stableVersionPage}
+              prereleasePage={prereleaseVersionPage}
+              onStablePageChange={setStableVersionPage}
+              onPrereleasePageChange={setPrereleaseVersionPage}
+              onSelect={handleInstallVersion}
+            />
           </Spin>
         </div>
       </Modal>
@@ -911,6 +1032,13 @@ const ProjectPage: React.FC<ProjectPageProps> = ({ hideToolchainPanel = false, h
         projectPath={currentPath}
         onClose={() => setDepTreeVisible(false)}
       />
+
+      <DependencyHealthModal
+        visible={healthVisible}
+        manager="npm"
+        cwd={currentPath}
+        onClose={() => setHealthVisible(false)}
+      />
       
       <BatchVersionPreviewModal
         visible={previewVisible}
@@ -932,4 +1060,67 @@ function uniqueByName(packages: any[]): any[] {
     seen.add(key)
     return true
   })
+}
+
+function buildInstallVersionOptions(metadata: NpmVersionMetadata, filter: VersionChannelFilter, page: number) {
+  const versions = versionsForFilter(metadata, filter)
+  return toVersionOptions(versions, page)
+}
+
+function buildPackageOptions(packages: any[], downloads: Record<string, number>) {
+  return packages.map((pkg: any) => ({
+    value: pkg.name,
+    label: renderPackageOption(pkg, downloads[pkg.name] || pkg.downloads || 0)
+  }))
+}
+
+async function loadSearchDownloads(packages: any[]): Promise<Record<string, number>> {
+  const entries = await Promise.all(packages.map(async (pkg) => {
+    if (pkg.downloads) return [pkg.name, pkg.downloads] as const
+    try {
+      const stats = await window.electronAPI.npm.downloadStats(pkg.name)
+      return [pkg.name, stats.downloads || 0] as const
+    } catch {
+      return [pkg.name, 0] as const
+    }
+  }))
+  return Object.fromEntries(entries)
+}
+
+function renderPackageOption(pkg: any, downloads: number): React.ReactNode {
+  return (
+    <div className={styles.packageOption}>
+      <Space size={6} className={styles.packageOptionHeader}>
+        <span className={styles.packageOptionName}>{pkg.name}</span>
+        {pkg.version && <Tag>{pkg.version}</Tag>}
+        {downloads > 0 && (
+          <Tag icon={<CloudDownloadOutlined />}>{formatCompactNumber(downloads)}</Tag>
+        )}
+      </Space>
+      <span className={styles.packageOptionDesc}>{cleanPackageSummary(pkg.description) || '暂无描述'}</span>
+    </div>
+  )
+}
+
+function versionFilterLabel(filter: VersionChannelFilter): string {
+  if (filter === 'stable') return '稳定版'
+  if (filter === 'prerelease') return '预览版'
+  return '全部版本'
+}
+
+function isNearPopupBottom(element: HTMLDivElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight < 48
+}
+
+function renderPagedPopup(menu: React.ReactElement, hasMore: boolean, loading: boolean, pageSize: number): React.ReactElement {
+  return (
+    <>
+      {menu}
+      {(hasMore || loading) && (
+        <div className={styles.loadMoreOption}>
+          {loading ? '正在加载更多...' : `滑动到底部自动加载，每次 ${pageSize} 个`}
+        </div>
+      )}
+    </>
+  )
 }

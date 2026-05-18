@@ -8,7 +8,10 @@ const toolLabels: Record<ToolName, string> = {
   maven: 'Maven',
   cargo: 'Cargo / Rust',
   gradle: 'Gradle',
-  go: 'Go'
+  go: 'Go',
+  cmake: 'CMake',
+  vcpkg: 'vcpkg',
+  conan: 'Conan'
 }
 
 const startupRequiredTools: ToolName[] = ['npm', 'pip', 'maven']

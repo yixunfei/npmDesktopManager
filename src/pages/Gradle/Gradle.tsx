@@ -12,10 +12,13 @@ import {
   ReloadOutlined,
   SearchOutlined,
   SyncOutlined,
-  UnorderedListOutlined
+  UnorderedListOutlined,
+  WarningOutlined
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import RuntimeManagerSwitch from '../../components/ManagerSwitch/RuntimeManagerSwitch'
+import { DependencyHealthModal } from '../../components/Package/DependencyHealthModal'
+import { useDependencyHealthReminder } from '../../hooks/useDependencyHealthReminder'
 import styles from './Gradle.module.css'
 
 const GRADLE_CONFIGURATION_OPTIONS = [
@@ -56,6 +59,7 @@ const GradlePage: React.FC = () => {
   const [commandVisible, setCommandVisible] = useState(false)
   const [outputVisible, setOutputVisible] = useState(false)
   const [versionVisible, setVersionVisible] = useState(false)
+  const [healthVisible, setHealthVisible] = useState(false)
   const [outputTitle, setOutputTitle] = useState('')
   const [output, setOutput] = useState('')
   const [selectedDependency, setSelectedDependency] = useState<GradleDependencyInfo | null>(null)
@@ -136,6 +140,8 @@ const GradlePage: React.FC = () => {
     void loadGradleProject()
   }, [currentPath])
 
+  useDependencyHealthReminder('gradle', currentPath, !!currentPath && !!buildInfo?.hasGradleBuild)
+
   const chooseDirectory = async () => {
     const path = await window.electronAPI.selectDirectory()
     if (!path) return
@@ -192,7 +198,11 @@ const GradlePage: React.FC = () => {
     }
 
     try {
-      const result = await window.electronAPI.gradle.search(normalized)
+      const result = await window.electronAPI.gradle.search(normalized, {
+        mode: 'startsWith',
+        scope: 'artifactId',
+        source: 'mavenCentral'
+      })
       setSearchOptions(result.map((item) => ({
         value: `${item.groupId}:${item.artifactId}`,
         label: `${item.groupId}:${item.artifactId}${item.latestVersion ? ` (${item.latestVersion})` : ''}${item.description ? ` - ${item.description}` : ''}`,
@@ -506,6 +516,7 @@ const GradlePage: React.FC = () => {
             <Button icon={<PlayCircleOutlined />} onClick={openCommandModal} disabled={actionsDisabled}>运行</Button>
             <Button icon={<UnorderedListOutlined />} onClick={showTasks} loading={loading} disabled={actionsDisabled}>Tasks</Button>
             <Button icon={<BranchesOutlined />} onClick={showDependencyTree} loading={loading} disabled={actionsDisabled}>依赖树</Button>
+            <Button icon={<WarningOutlined />} onClick={() => setHealthVisible(true)} disabled={actionsDisabled}>依赖诊断</Button>
           </Space>
         </div>
 
@@ -622,6 +633,13 @@ const GradlePage: React.FC = () => {
       >
         <pre className={styles.output}>{output}</pre>
       </Modal>
+
+      <DependencyHealthModal
+        visible={healthVisible}
+        manager="gradle"
+        cwd={currentPath}
+        onClose={() => setHealthVisible(false)}
+      />
     </div>
   )
 }

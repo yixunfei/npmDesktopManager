@@ -46,6 +46,38 @@
   width: 100%;
 }
 
+.coordinateSearchPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 8px;
+  background: var(--bg-secondary, #2d2d2d);
+}
+
+.coordinateControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.coordinateControls :global(.ant-select) {
+  min-width: 128px;
+}
+
+.coordinateHelp {
+  color: var(--text-secondary, #999999);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.coordinateHelp code {
+  color: var(--primary-color, #1890ff);
+}
+
 .typeSelect {
   flex: 0 0 150px;
 }
@@ -101,6 +133,29 @@
   background: var(--bg-secondary, #2d2d2d);
   padding: 16px;
   border-radius: 8px;
+}
+
+.packageSummary {
+  max-width: 100%;
+}
+
+.keywordTag {
+  margin-inline-end: 0 !important;
+  font-size: 11px;
+}
+
+.metaText {
+  color: var(--text-secondary, #999);
+  font-size: 12px;
+}
+
+.versionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary, #999);
+  font-size: 13px;
 }
 
 .versionList {

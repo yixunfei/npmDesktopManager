@@ -1,0 +1,56 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionHint {
+  margin: 0;
+  color: var(--text-secondary, #999);
+  font-size: 12px;
+}
+
+.versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.versionTag {
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.versionTag:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.loadMore {
+  width: 100%;
+}
+
+.emptySection {
+  color: var(--text-secondary, #999);
+  font-size: 12px;
+}

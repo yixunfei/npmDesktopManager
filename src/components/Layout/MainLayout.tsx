@@ -13,7 +13,8 @@ import {
   AppstoreOutlined,
   ToolOutlined,
   DeploymentUnitOutlined,
-  BranchesOutlined
+  BranchesOutlined,
+  ApiOutlined
 } from '@ant-design/icons'
 import { ThemeMode, useThemeStore } from '../../stores/themeStore'
 import { useResolvedTheme } from '../../hooks/useResolvedTheme'
@@ -74,6 +75,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       key: '/go',
       icon: <CodeOutlined />,
       label: t('layout.goManagement')
+    },
+    {
+      key: '/native',
+      icon: <ApiOutlined />,
+      label: t('layout.nativeManagement')
     },
     {
       key: '/global',

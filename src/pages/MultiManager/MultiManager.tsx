@@ -20,11 +20,13 @@ import {
 } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { DependencyTreeViewer } from '../../components/Package/DependencyTreeViewer'
+import { DependencyHealthModal } from '../../components/Package/DependencyHealthModal'
 import ProjectPage from '../Project/Project'
 import GlobalPage from '../Global/Global'
 import PublishPage from '../Publish/Publish'
 import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
 import RuntimeManagerSwitch from '../../components/ManagerSwitch/RuntimeManagerSwitch'
+import { useDependencyHealthReminder } from '../../hooks/useDependencyHealthReminder'
 import styles from './MultiManager.module.css'
 
 type ManagerType = 'npm' | 'pip' | 'maven'
@@ -114,6 +116,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
   const [pipSelectedPackage, setPipSelectedPackage] = useState<PipPackageInfo | null>(null)
   const [pipRepairVisible, setPipRepairVisible] = useState(false)
   const [pipRepairOutput, setPipRepairOutput] = useState('')
+  const [pipHealthVisible, setPipHealthVisible] = useState(false)
   const [pipSearchOptions, setPipSearchOptions] = useState<Array<{ value: string; label: string }>>([])
   const [pipVersionOptions, setPipVersionOptions] = useState<Array<{ value: string; label: string }>>([])
   const [pipMirror, setPipMirror] = useState<'official' | 'tsinghua' | 'aliyun' | 'custom'>('official')
@@ -136,6 +139,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
   const [mavenAuditIssues, setMavenAuditIssues] = useState<MavenAuditIssue[]>([])
   const [mavenTreeVisible, setMavenTreeVisible] = useState(false)
   const [mavenTree, setMavenTree] = useState<any>(null)
+  const [mavenHealthVisible, setMavenHealthVisible] = useState(false)
   const [mavenVersionVisible, setMavenVersionVisible] = useState(false)
   const [mavenSelectedDep, setMavenSelectedDep] = useState<MavenDependencyInfo | null>(null)
   const [mavenPublishVisible, setMavenPublishVisible] = useState(false)
@@ -175,6 +179,9 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
 
   const mavenGroupOptions = useMemo(() => toMavenSearchOptions(mavenSearchResults, 'groupId'), [mavenSearchResults])
   const mavenArtifactOptions = useMemo(() => toMavenSearchOptions(mavenSearchResults, 'artifactId'), [mavenSearchResults])
+
+  useDependencyHealthReminder('pip', currentPath, activeManager === 'pip' && !!currentPath && pipRows.length > 0)
+  useDependencyHealthReminder('maven', currentPath, activeManager === 'maven' && !!currentPath && mavenDeps.length > 0)
 
   const detectedManagers = useMemo<ManagerType[]>(() => {
     if (!projectInfo) return []
@@ -886,13 +893,18 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
     }
   }
 
-  const searchMavenDependencies = async (query: string) => {
+  const searchMavenDependencies = async (query: string, scope: MavenSearchScope = 'artifactId') => {
     if (!query.trim()) {
       setMavenSearchResults([])
       return
     }
     try {
-      const results = await window.electronAPI.maven.search(query, currentPath)
+      const results = await window.electronAPI.maven.search(query, currentPath, {
+        mode: 'startsWith',
+        scope,
+        source: 'mavenCentral',
+        includeLocal: false
+      })
       setMavenSearchResults(results)
     } catch {
       setMavenSearchResults([])
@@ -1265,6 +1277,9 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
                 <Button icon={<ApartmentOutlined />} onClick={showPipTree}>
                   依赖树
                 </Button>
+                <Button icon={<WarningOutlined />} onClick={() => setPipHealthVisible(true)} disabled={!currentPath}>
+                  依赖诊断
+                </Button>
                 <Button icon={<DeleteOutlined />} onClick={purgePipCache}>
                   清理缓存
                 </Button>
@@ -1405,6 +1420,9 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
                 </Button>
                 <Button icon={<SecurityScanOutlined />} onClick={runMavenSecurityAudit} disabled={!currentPath}>
                   安全审计
+                </Button>
+                <Button icon={<WarningOutlined />} onClick={() => setMavenHealthVisible(true)} disabled={!currentPath}>
+                  依赖诊断
                 </Button>
                 <Button icon={<CodeOutlined />} onClick={() => setGoalVisible(true)} disabled={!currentPath}>
                   执行 Maven Goal
@@ -1768,6 +1786,13 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         onClose={() => setPipTreeVisible(false)}
       />
 
+      <DependencyHealthModal
+        visible={pipHealthVisible}
+        manager="pip"
+        cwd={currentPath}
+        onClose={() => setPipHealthVisible(false)}
+      />
+
       <Modal
         title="添加 Maven 依赖"
         open={mavenAddVisible}
@@ -1781,7 +1806,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
           <Form.Item name="groupId" label="groupId" rules={[{ required: true, message: '请输入 groupId' }]}>
             <AutoComplete
               options={mavenGroupOptions}
-              onSearch={searchMavenDependencies}
+              onSearch={(query) => searchMavenDependencies(query, 'groupId')}
               onSelect={(_, option) => {
                 const dep = (option as any).dep as MavenSearchResult
                 mavenForm.setFieldsValue({
@@ -1797,7 +1822,7 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
           <Form.Item name="artifactId" label="artifactId" rules={[{ required: true, message: '请输入 artifactId' }]}>
             <AutoComplete
               options={mavenArtifactOptions}
-              onSearch={searchMavenDependencies}
+              onSearch={(query) => searchMavenDependencies(query, 'artifactId')}
               onSelect={(_, option) => {
                 const dep = (option as any).dep as MavenSearchResult
                 mavenForm.setFieldsValue({
@@ -2000,6 +2025,13 @@ const MultiManagerPage: React.FC<MultiManagerPageProps> = ({ initialManager = 'n
         visible={mavenTreeVisible}
         data={mavenTree}
         onClose={() => setMavenTreeVisible(false)}
+      />
+
+      <DependencyHealthModal
+        visible={mavenHealthVisible}
+        manager="maven"
+        cwd={currentPath}
+        onClose={() => setMavenHealthVisible(false)}
       />
 
       <Modal

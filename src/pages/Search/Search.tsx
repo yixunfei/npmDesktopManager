@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AutoComplete, Button, Descriptions, Dropdown, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Tooltip } from 'antd'
-import { DownloadOutlined, GlobalOutlined, HistoryOutlined, InfoCircleOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons'
+import { AutoComplete, Button, Checkbox, Descriptions, Dropdown, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Tooltip } from 'antd'
+import { CloudDownloadOutlined, DownloadOutlined, GlobalOutlined, HistoryOutlined, InfoCircleOutlined, SearchOutlined, SwapOutlined } from '@ant-design/icons'
 import { useAppStore } from '../../stores/appStore'
 import { usePackageStore } from '../../stores/packageStore'
 import { PackageDetailModal } from '../../components/Package/PackageDetailModal'
+import { NpmVersionPicker } from '../../components/Package/NpmVersionPicker'
 import ProjectPathBar from '../../components/ProjectPathBar/ProjectPathBar'
 import { localizedMessage as message } from '../../utils/localizedFeedback'
+import { formatShortDate, splitVersionStrings } from '../../utils/npmVersions'
+import { cleanPackageSummary, formatCompactNumber } from '../../utils/npmDisplay'
 import styles from './Search.module.css'
 
 const { Search: SearchInput } = Input
 
-type SearchType = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+type SearchType = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
 
 interface SearchItem {
   type: SearchType
@@ -22,10 +25,28 @@ interface SearchItem {
   groupId?: string
   artifactId?: string
   modulePath?: string
+  manager?: NativeDependencyManager
+  source?: string
+  kind?: NativeLibraryKind
+  path?: string
+  linkage?: string
   latestVersion?: string
+  repository?: string
   repositoryUrl?: string
   stars?: number
+  downloads?: number
+  keywords?: string[]
+  date?: string
+  publisher?: string
   raw: any
+}
+
+interface CoordinateSearchSettings {
+  mode: MavenSearchMode
+  scope: MavenSearchScope
+  source: MavenSearchSource
+  customUrl: string
+  includeLocal: boolean
 }
 
 const SEARCH_TYPE_OPTIONS = [
@@ -34,10 +55,11 @@ const SEARCH_TYPE_OPTIONS = [
   { label: 'Maven', value: 'maven' },
   { label: 'Cargo', value: 'cargo' },
   { label: 'Gradle', value: 'gradle' },
-  { label: 'Go / GitHub', value: 'go' }
+  { label: 'Go / GitHub', value: 'go' },
+  { label: 'C/C++ Native', value: 'native' }
 ]
 
-const SEARCH_PLACEHOLDERS: Record<SearchType, string> = {
+const SEARCH_PLACEHOLDERS: Partial<Record<SearchType, string>> = {
   npm: '搜索 npm 包，例如 react、typescript',
   pip: '搜索 PyPI 包，例如 requests、httpx',
   maven: '搜索 Maven 依赖，例如 spring-core、junit',
@@ -46,13 +68,44 @@ const SEARCH_PLACEHOLDERS: Record<SearchType, string> = {
   go: '搜索 GitHub Go 模块，例如 gin 或 github.com/gin-gonic/gin'
 }
 
-const SEARCH_TYPE_COLORS: Record<SearchType, string> = {
+SEARCH_PLACEHOLDERS.native = 'Search C/C++ libraries, for example openssl, boost, zlib'
+
+const SEARCH_TYPE_COLORS: Partial<Record<SearchType, string>> = {
   npm: 'blue',
   pip: 'cyan',
   maven: 'purple',
   cargo: 'volcano',
   gradle: 'green',
   go: 'geekblue'
+}
+
+SEARCH_TYPE_COLORS.native = 'gold'
+
+const COORDINATE_SEARCH_MODES = [
+  { label: '前缀', value: 'startsWith' },
+  { label: '包含', value: 'contains' },
+  { label: '精确', value: 'exact' },
+  { label: '关键字', value: 'keyword' }
+]
+
+const COORDINATE_SEARCH_SCOPES = [
+  { label: 'artifactId', value: 'artifactId' },
+  { label: 'groupId', value: 'groupId' },
+  { label: '坐标', value: 'coordinate' },
+  { label: '全部', value: 'all' }
+]
+
+const COORDINATE_SEARCH_SOURCES = [
+  { label: 'Maven Central', value: 'mavenCentral' },
+  { label: 'Nexus 自定义', value: 'nexus' }
+]
+
+const DEFAULT_COORDINATE_SEARCH: CoordinateSearchSettings = {
+  mode: 'startsWith',
+  scope: 'artifactId',
+  source: 'mavenCentral',
+  customUrl: '',
+  includeLocal: false
 }
 
 const SearchPage: React.FC = () => {
@@ -63,6 +116,9 @@ const SearchPage: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [versionLoading, setVersionLoading] = useState(false)
   const [versions, setVersions] = useState<string[]>([])
+  const [npmVersionMetadata, setNpmVersionMetadata] = useState<NpmVersionMetadata | null>(null)
+  const [stableVersionPage, setStableVersionPage] = useState(1)
+  const [prereleaseVersionPage, setPrereleaseVersionPage] = useState(1)
   const [versionVisible, setVersionVisible] = useState(false)
   const [selectedItem, setSelectedItem] = useState<SearchItem | null>(null)
   const [npmDetailVisible, setNpmDetailVisible] = useState(false)
@@ -72,6 +128,8 @@ const SearchPage: React.FC = () => {
   const [mavenDetailVisible, setMavenDetailVisible] = useState(false)
   const [mavenDetail, setMavenDetail] = useState<SearchItem | null>(null)
   const [packageSizes, setPackageSizes] = useState<Record<string, any>>({})
+  const [packageDownloads, setPackageDownloads] = useState<Record<string, number>>({})
+  const [coordinateSearch, setCoordinateSearch] = useState<CoordinateSearchSettings>(DEFAULT_COORDINATE_SEARCH)
 
   const currentPath = useAppStore((state) => state.currentPath)
   const addNotification = useAppStore((state) => state.addNotification)
@@ -81,7 +139,11 @@ const SearchPage: React.FC = () => {
   useEffect(() => {
     setResults([])
     setPackageSizes({})
+    setPackageDownloads({})
     setVersions([])
+    setNpmVersionMetadata(null)
+    setStableVersionPage(1)
+    setPrereleaseVersionPage(1)
     setVersionVisible(false)
     setSelectedItem(null)
     setPipDetail(null)
@@ -99,7 +161,7 @@ const SearchPage: React.FC = () => {
     let cancelled = false
     const timer = window.setTimeout(async () => {
       try {
-        const items = await searchPackages(searchType, query, currentPath)
+        const items = await searchPackages(searchType, query, currentPath, coordinateSearch)
         if (!cancelled) {
           setSuggestOptions(toSuggestionOptions(items, searchType))
         }
@@ -114,14 +176,16 @@ const SearchPage: React.FC = () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [currentPath, searchQuery, searchType])
+  }, [coordinateSearch, currentPath, searchQuery, searchType])
 
   useEffect(() => {
     if (searchType === 'npm' && results.length > 0) {
       void loadPackageSizes()
+      void loadPackageDownloads()
       return
     }
     setPackageSizes({})
+    setPackageDownloads({})
   }, [results, searchType])
 
   const loadPackageSizes = async () => {
@@ -138,6 +202,24 @@ const SearchPage: React.FC = () => {
     setPackageSizes(Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, any]>))
   }
 
+  const loadPackageDownloads = async () => {
+    const entries = await Promise.all(
+      results.slice(0, 20).map(async (pkg) => {
+        if (pkg.downloads) {
+          return [pkg.name, pkg.downloads] as const
+        }
+
+        try {
+          const stats = await window.electronAPI.npm.downloadStats(pkg.name)
+          return [pkg.name, stats.downloads || 0] as const
+        } catch {
+          return null
+        }
+      })
+    )
+    setPackageDownloads(Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, number]>))
+  }
+
   const runSearch = async (nextQuery = searchQuery) => {
     const query = nextQuery.trim()
     if (!query) {
@@ -148,7 +230,7 @@ const SearchPage: React.FC = () => {
     setSearchQuery(query)
     setLoading(true)
     try {
-      const items = await searchPackages(searchType, query, currentPath)
+      const items = await searchPackages(searchType, query, currentPath, coordinateSearch)
       setResults(items)
       setSuggestOptions(toSuggestionOptions(items, searchType))
     } catch (error: any) {
@@ -207,6 +289,13 @@ const SearchPage: React.FC = () => {
           cwd: currentPath,
           version
         })
+      } else if (item.type === 'native') {
+        await window.electronAPI.native.install({
+          cwd: currentPath,
+          manager: item.manager === 'conan' ? 'conan' : 'vcpkg',
+          name: item.name,
+          version
+        })
       } else {
         await window.electronAPI.go.install({
           modulePath: item.modulePath || item.name,
@@ -220,7 +309,9 @@ const SearchPage: React.FC = () => {
         message: '安装成功',
         description: item.type === 'maven' || item.type === 'gradle'
           ? `${item.groupId}:${item.artifactId}${version ? `@${version}` : ''}`
-          : `${item.modulePath || item.name}${version ? `@${version}` : ''}`
+          : item.type === 'native'
+            ? `${item.manager || 'vcpkg'}:${item.name}${version ? `@${version}` : ''}`
+            : `${item.modulePath || item.name}${version ? `@${version}` : ''}`
       })
 
       if (item.type === 'npm') {
@@ -239,10 +330,20 @@ const SearchPage: React.FC = () => {
 
   const handleShowVersions = async (item: SearchItem) => {
     setSelectedItem(item)
+    setVersions([])
+    setNpmVersionMetadata(null)
+    setStableVersionPage(1)
+    setPrereleaseVersionPage(1)
     setVersionLoading(true)
     try {
-      const versionList = await fetchVersions(item)
-      setVersions(versionList)
+      if (item.type === 'npm') {
+        const metadata = await window.electronAPI.npm.getVersionMetadata(item.name)
+        setNpmVersionMetadata(metadata)
+        setVersions(metadata.versions.map((version) => version.version))
+      } else {
+        const versionList = await fetchVersions(item)
+        setVersions(versionList)
+      }
       setVersionVisible(true)
     } catch (error: any) {
       addNotification({
@@ -377,7 +478,17 @@ const SearchPage: React.FC = () => {
           dataIndex: 'description',
           key: 'description',
           ellipsis: true,
-          render: (text: string) => text || '-'
+          render: (text: string, record: SearchItem) => (
+            <Space direction="vertical" size={2} className={styles.packageSummary}>
+              <span>{cleanPackageSummary(text) || '暂无描述'}</span>
+              <Space size={4} wrap>
+                {record.keywords?.slice(0, 4).map((keyword) => (
+                  <Tag key={keyword} className={styles.keywordTag}>{keyword}</Tag>
+                ))}
+                {record.date && <span className={styles.metaText}>更新 {formatShortDate(record.date)}</span>}
+              </Space>
+            </Space>
+          )
         },
         {
           title: '版本',
@@ -396,6 +507,20 @@ const SearchPage: React.FC = () => {
               <Tooltip title={`${size.fileCount} 个文件`}>
                 <Tag icon={<DownloadOutlined />}>{size.prettySize}</Tag>
               </Tooltip>
+            ) : '-'
+          }
+        },
+        {
+          title: '周下载量',
+          dataIndex: 'downloads',
+          key: 'downloads',
+          width: 110,
+          render: (value: number, record: SearchItem) => {
+            const downloads = value || packageDownloads[record.name]
+            return downloads ? (
+            <Tooltip title="npm 最近一周下载量">
+              <Tag icon={<CloudDownloadOutlined />}>{formatCompactNumber(downloads)}</Tag>
+            </Tooltip>
             ) : '-'
           }
         },
@@ -514,6 +639,44 @@ const SearchPage: React.FC = () => {
       ]
     }
 
+    if (searchType === 'native') {
+      return [
+        {
+          title: 'Library',
+          dataIndex: 'name',
+          key: 'name',
+          width: 240,
+          render: (text: string, record: SearchItem) => (
+            <Button type="link" size="small" style={{ padding: 0 }} onClick={() => handleShowDetail(record)}>
+              <Tag color="gold">{text}</Tag>
+            </Button>
+          )
+        },
+        {
+          title: 'Manager',
+          dataIndex: 'manager',
+          key: 'manager',
+          width: 120,
+          render: (text: string) => text ? <Tag>{text}</Tag> : '-'
+        },
+        {
+          title: 'Version',
+          dataIndex: 'version',
+          key: 'version',
+          width: 140,
+          render: (text: string) => text || '-'
+        },
+        {
+          title: 'Source',
+          dataIndex: 'source',
+          key: 'source',
+          ellipsis: true,
+          render: (text: string, record: SearchItem) => text || record.description || '-'
+        },
+        actionColumn
+      ]
+    }
+
     return [
       {
         title: searchType === 'gradle' ? 'Group' : 'GroupId',
@@ -544,11 +707,16 @@ const SearchPage: React.FC = () => {
         dataIndex: 'description',
         key: 'description',
         ellipsis: true,
-        render: (text: string) => text || '-'
+        render: (text: string, record: SearchItem) => (
+          <Space size={6} wrap>
+            <span>{text || '-'}</span>
+            {record.repository && <Tag>{record.repository}</Tag>}
+          </Space>
+        )
       },
       actionColumn
     ]
-  }, [packageSizes, searchType, actionColumn])
+  }, [packageDownloads, packageSizes, searchType, actionColumn])
 
   const pipFallback = selectedPipFallback(results)
 
@@ -584,6 +752,7 @@ const SearchPage: React.FC = () => {
             />
           </AutoComplete>
         </div>
+        {renderCoordinateSearchControls()}
       </div>
 
       <div className={styles.results}>
@@ -597,7 +766,7 @@ const SearchPage: React.FC = () => {
               rowKey="key"
               size="small"
               pagination={{ pageSize: 20 }}
-              scroll={{ x: searchType === 'go' ? 1080 : searchType === 'npm' ? 980 : searchType === 'pip' ? 900 : 960 }}
+              scroll={{ x: searchType === 'go' ? 1080 : searchType === 'npm' ? 1180 : searchType === 'pip' ? 900 : searchType === 'maven' || searchType === 'gradle' ? 1040 : 960 }}
             />
           )}
         </Spin>
@@ -621,7 +790,7 @@ const SearchPage: React.FC = () => {
           <Descriptions bordered column={1} size="small">
             <Descriptions.Item label="名称">{pipDetail?.name || pipFallback?.name || '-'}</Descriptions.Item>
             <Descriptions.Item label="版本">{pipDetail?.version || pipFallback?.version || '-'}</Descriptions.Item>
-            <Descriptions.Item label="摘要">{pipDetail?.summary || pipFallback?.description || '-'}</Descriptions.Item>
+            <Descriptions.Item label="摘要">{cleanPackageSummary(pipDetail?.summary || pipFallback?.description) || '-'}</Descriptions.Item>
             <Descriptions.Item label="主页">{pipDetail?.homePage || (pipFallback ? resolvePackageUrl(pipFallback) : '-')}</Descriptions.Item>
             <Descriptions.Item label="作者">{pipDetail?.author || '-'}</Descriptions.Item>
             <Descriptions.Item label="许可证">{pipDetail?.license || '-'}</Descriptions.Item>
@@ -659,9 +828,18 @@ const SearchPage: React.FC = () => {
             {mavenDetail.type === 'cargo' && (
               <Descriptions.Item label="Crate">{mavenDetail.name}</Descriptions.Item>
             )}
+            {mavenDetail.type === 'native' && (
+              <>
+                <Descriptions.Item label="Manager">{mavenDetail.manager || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Kind">{mavenDetail.kind || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Linkage">{mavenDetail.linkage || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Path">{mavenDetail.path || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Source">{mavenDetail.source || '-'}</Descriptions.Item>
+              </>
+            )}
             <Descriptions.Item label="版本">{mavenDetail.version || mavenDetail.latestVersion || '-'}</Descriptions.Item>
             <Descriptions.Item label="最新版本">{mavenDetail.latestVersion || '-'}</Descriptions.Item>
-            <Descriptions.Item label="描述">{mavenDetail.description || '-'}</Descriptions.Item>
+            <Descriptions.Item label="描述">{cleanPackageSummary(mavenDetail.description) || '-'}</Descriptions.Item>
             <Descriptions.Item label="Page">{resolvePackageUrl(mavenDetail) || '-'}</Descriptions.Item>
           </Descriptions>
         ) : (
@@ -674,17 +852,35 @@ const SearchPage: React.FC = () => {
         open={versionVisible}
         onCancel={() => setVersionVisible(false)}
         footer={null}
-        width={560}
+        width={680}
       >
         <Space orientation="vertical" style={{ width: '100%' }}>
           <span>当前版本: <Tag color="blue">{selectedItem?.version || selectedItem?.latestVersion || '-'}</Tag></span>
+          {selectedItem?.type === 'npm' && (
+            <div className={styles.versionMeta}>
+              <span>{cleanPackageSummary(npmVersionMetadata?.description || selectedItem.description) || '暂无描述'}</span>
+              {npmVersionMetadata?.latest && <Tag color="green">latest: {npmVersionMetadata.latest}</Tag>}
+            </div>
+          )}
           <Spin spinning={versionLoading}>
             <div className={styles.versionList}>
-              {versions.length === 0 ? (
+              {selectedItem?.type === 'npm' ? (
+                <NpmVersionPicker
+                  stable={npmVersionMetadata?.stable || splitVersionStrings(versions).stable}
+                  prerelease={npmVersionMetadata?.prerelease || splitVersionStrings(versions).prerelease}
+                  currentVersion={selectedItem?.version || selectedItem?.latestVersion}
+                  latestVersion={npmVersionMetadata?.latest || selectedItem?.latestVersion || selectedItem?.version}
+                  stablePage={stableVersionPage}
+                  prereleasePage={prereleaseVersionPage}
+                  onStablePageChange={setStableVersionPage}
+                  onPrereleasePageChange={setPrereleaseVersionPage}
+                  onSelect={handleInstallVersion}
+                />
+              ) : versions.length === 0 ? (
                 <Empty description="未找到版本信息" />
               ) : (
                 <div className={styles.versions}>
-                  {versions.slice(0, 50).map((version) => (
+                  {versions.slice(0, stableVersionPage * 10).map((version) => (
                     <Tag
                       key={version}
                       className={styles.versionTag}
@@ -694,6 +890,11 @@ const SearchPage: React.FC = () => {
                       {version}
                     </Tag>
                   ))}
+                  {versions.slice(0, stableVersionPage * 10).length < versions.length && (
+                    <Button onClick={() => setStableVersionPage(stableVersionPage + 1)}>
+                      加载更多，每次 10 个
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -702,11 +903,60 @@ const SearchPage: React.FC = () => {
       </Modal>
     </div>
   )
+
+  function renderCoordinateSearchControls() {
+    if (searchType !== 'maven' && searchType !== 'gradle') return null
+    const updateCoordinateSearch = (patch: Partial<CoordinateSearchSettings>) => {
+      setCoordinateSearch((current) => ({ ...current, ...patch }))
+    }
+
+    return (
+      <div className={styles.coordinateSearchPanel}>
+        <div className={styles.coordinateControls}>
+          <Select
+            size="small"
+            value={coordinateSearch.scope}
+            options={COORDINATE_SEARCH_SCOPES}
+            onChange={(scope) => updateCoordinateSearch({ scope })}
+          />
+          <Select
+            size="small"
+            value={coordinateSearch.mode}
+            options={COORDINATE_SEARCH_MODES}
+            onChange={(mode) => updateCoordinateSearch({ mode })}
+          />
+          <Select
+            size="small"
+            value={coordinateSearch.source}
+            options={COORDINATE_SEARCH_SOURCES}
+            onChange={(source) => updateCoordinateSearch({ source })}
+          />
+          <Checkbox
+            checked={coordinateSearch.includeLocal}
+            onChange={(event) => updateCoordinateSearch({ includeLocal: event.target.checked })}
+          >
+            包含本地仓库
+          </Checkbox>
+        </div>
+        {coordinateSearch.source === 'nexus' && (
+          <Input
+            size="small"
+            value={coordinateSearch.customUrl}
+            onChange={(event) => updateCoordinateSearch({ customUrl: event.target.value })}
+            placeholder="Nexus 3 地址，例如 https://nexus.example.com"
+          />
+        )}
+        <div className={styles.coordinateHelp}>
+          默认按 artifactId 前缀匹配：输入 <code>ne</code> 会查询 <code>a:ne*</code>，适合 netty、neethi 这类依赖；也可切到 groupId、坐标、全部字段，或输入 <code>io.netty:netty</code> 做坐标搜索。Maven Central 不接受前导通配符，包含模式会用可索引查询和结果排序兜底；自定义 Nexus 使用 <code>/service/rest/v1/search</code>。
+        </div>
+      </div>
+    )
+  }
 }
 
 export default SearchPage
 
-async function searchPackages(type: SearchType, query: string, cwd: string): Promise<SearchItem[]> {
+async function searchPackages(type: SearchType, query: string, cwd: string, coordinateOptions?: CoordinateSearchSettings): Promise<SearchItem[]> {
   if (type === 'npm') {
     const result = await window.electronAPI.npm.search(query)
     return uniqueByKey(result.map((pkg: any) => ({
@@ -714,8 +964,12 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
       key: pkg.name,
       name: pkg.name,
       version: pkg.version || '',
-      description: pkg.description || '',
+      description: cleanPackageSummary(pkg.description),
       author: pkg.author,
+      downloads: pkg.downloads,
+      keywords: Array.isArray(pkg.keywords) ? pkg.keywords : [],
+      date: pkg.date,
+      publisher: pkg.publisher?.username || pkg.publisher?.email || '',
       raw: pkg
     })))
   }
@@ -727,7 +981,7 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
       key: pkg.name,
       name: pkg.name,
       version: pkg.version || '',
-      description: pkg.description || '',
+      description: cleanPackageSummary(pkg.description),
       raw: pkg
     })))
   }
@@ -740,13 +994,13 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
       name: pkg.name,
       version: pkg.version || '',
       latestVersion: pkg.version || '',
-      description: pkg.description || '',
+      description: cleanPackageSummary(pkg.description),
       raw: pkg
     })))
   }
 
   if (type === 'gradle') {
-    const result = await window.electronAPI.gradle.search(query)
+    const result = await window.electronAPI.gradle.search(query, toMavenSearchOptions(coordinateOptions))
     return uniqueByKey(result.map((dep: any) => ({
       type,
       key: `${dep.groupId}:${dep.artifactId}`,
@@ -755,7 +1009,8 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
       artifactId: dep.artifactId,
       version: dep.version || dep.latestVersion || '',
       latestVersion: dep.latestVersion || dep.version || '',
-      description: dep.description || '',
+      description: cleanPackageSummary(dep.description || dep.repository),
+      repository: dep.repository,
       raw: dep
     })))
   }
@@ -769,14 +1024,32 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
       modulePath: mod.path,
       version: mod.version || mod.latest || '',
       latestVersion: mod.latest || mod.version || '',
-      description: mod.description || '',
+      description: cleanPackageSummary(mod.description),
       repositoryUrl: mod.repositoryUrl,
       stars: mod.stars,
       raw: mod
     })))
   }
 
-  const result = await window.electronAPI.maven.search(query, cwd)
+  if (type === 'native') {
+    const result = await window.electronAPI.native.search(query)
+    return uniqueByKey(result.map((dep: NativeDependencyInfo) => ({
+      type,
+      key: `${dep.manager}:${dep.name}:${dep.path || ''}`,
+      name: dep.name,
+      version: dep.version || '',
+      latestVersion: dep.version || '',
+      description: dep.source || dep.manager,
+      manager: dep.manager,
+      source: dep.source,
+      kind: dep.kind,
+      path: dep.path,
+      linkage: dep.linkage,
+      raw: dep
+    })))
+  }
+
+  const result = await window.electronAPI.maven.search(query, cwd, toMavenSearchOptions(coordinateOptions))
   return uniqueByKey(result.map((dep: any) => ({
     type,
     key: `${dep.groupId}:${dep.artifactId}`,
@@ -785,9 +1058,22 @@ async function searchPackages(type: SearchType, query: string, cwd: string): Pro
     artifactId: dep.artifactId,
     version: dep.version || dep.latestVersion || '',
     latestVersion: dep.latestVersion || dep.version || '',
-    description: dep.description || '',
+    description: cleanPackageSummary(dep.description || dep.repository),
+    repository: dep.repository,
     raw: dep
   })))
+}
+
+function toMavenSearchOptions(settings?: CoordinateSearchSettings): MavenSearchOptions | undefined {
+  if (!settings) return undefined
+  return {
+    mode: settings.mode,
+    scope: settings.scope,
+    source: settings.source,
+    customUrl: settings.customUrl,
+    includeLocal: settings.includeLocal,
+    limit: 30
+  }
 }
 
 async function fetchVersions(item: SearchItem): Promise<string[]> {
@@ -805,6 +1091,10 @@ async function fetchVersions(item: SearchItem): Promise<string[]> {
 
   if (item.type === 'go') {
     return await window.electronAPI.go.versions(item.modulePath || item.name)
+  }
+
+  if (item.type === 'native') {
+    return item.version ? [item.version] : []
   }
 
   if (!item.groupId || !item.artifactId) return []
@@ -847,6 +1137,13 @@ function resolvePackageUrl(item: SearchItem): string {
     return item.repositoryUrl || `https://pkg.go.dev/${item.modulePath || item.name}`
   }
 
+  if (item.type === 'native') {
+    if (item.manager === 'conan') {
+      return `https://conan.io/center/recipes/${encodeURIComponent(item.name)}`
+    }
+    return `https://vcpkg.io/en/package/${encodeURIComponent(item.name)}`
+  }
+
   if (!item.groupId || !item.artifactId) return ''
   return `https://search.maven.org/artifact/${encodeURIComponent(item.groupId)}/${encodeURIComponent(item.artifactId)}`
 }
@@ -865,6 +1162,7 @@ function detailTitle(item: SearchItem | null): string {
     return `${item.groupId}:${item.artifactId}`
   }
   if (item.type === 'go') return item.modulePath || item.name
+  if (item.type === 'native') return `${item.manager || 'native'}:${item.name}`
   return item.name
 }
 
@@ -874,7 +1172,7 @@ function toSuggestionOptions(items: SearchItem[], type: SearchType): Array<{ val
       ? `${item.groupId}:${item.artifactId}`
       : item.type === 'go'
         ? item.modulePath || item.name
-      : item.name
+        : item.name
     const version = item.latestVersion || item.version
 
     return {
@@ -883,8 +1181,13 @@ function toSuggestionOptions(items: SearchItem[], type: SearchType): Array<{ val
         <div className={styles.suggestionItem}>
           <span className={styles.suggestionName}>{value}</span>
           {version && <Tag className={styles.suggestionVersion}>{version}</Tag>}
-          {item.description && <span className={styles.suggestionDesc}>{item.description}</span>}
-          <Tag color={SEARCH_TYPE_COLORS[type]}>{type}</Tag>
+          {type === 'npm' && item.downloads ? (
+            <Tag className={styles.suggestionVersion} icon={<CloudDownloadOutlined />}>
+              {formatCompactNumber(item.downloads)}
+            </Tag>
+          ) : null}
+          {item.description && <span className={styles.suggestionDesc}>{cleanPackageSummary(item.description)}</span>}
+          <Tag color={SEARCH_TYPE_COLORS[type] || 'default'}>{type}</Tag>
         </div>
       )
     }

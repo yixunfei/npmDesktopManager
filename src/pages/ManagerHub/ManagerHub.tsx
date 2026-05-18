@@ -1,6 +1,6 @@
 import React from 'react'
 import { Button, Card, Space, Typography } from 'antd'
-import { AppstoreOutlined, ApartmentOutlined, BranchesOutlined, CloudUploadOutlined, CodeOutlined, DeploymentUnitOutlined, FolderOpenOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
+import { ApiOutlined, AppstoreOutlined, ApartmentOutlined, BranchesOutlined, CloudUploadOutlined, CodeOutlined, DeploymentUnitOutlined, FolderOpenOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../stores/appStore'
 import styles from './ManagerHub.module.css'
@@ -91,6 +91,17 @@ const ManagerHub: React.FC = () => {
               go.mod 模块、GitHub 搜索、版本更新、tidy、graph 与漏洞检查。
             </Paragraph>
             <Button type="primary" onClick={() => navigate('/go')}>进入 Go 管理</Button>
+          </Space>
+        </Card>
+
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
+            <ApiOutlined className={styles.icon} />
+            <Title level={4}>C/C++ Native</Title>
+            <Paragraph className={styles.cardText}>
+              CMake、vcpkg、Conan、动态链接库与静态库扫描。
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate('/native')}>进入 C/C++ Native</Button>
           </Space>
         </Card>
 

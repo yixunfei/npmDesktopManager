@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   
   npm: {
-    search: (query: string) => ipcRenderer.invoke('npm:search', query),
+    search: (query: string, limit?: number) => ipcRenderer.invoke('npm:search', query, limit),
     view: (packageName: string) => ipcRenderer.invoke('npm:view', packageName),
     install: (args: InstallArgs) => ipcRenderer.invoke('npm:install', args),
     uninstall: (args: UninstallArgs) => ipcRenderer.invoke('npm:uninstall', args),
@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     checkAllOutdated: (cwd: string) => ipcRenderer.invoke('npm:check-all-outdated', cwd),
     getPackageInfo: (packageName: string) => ipcRenderer.invoke('npm:info', packageName),
     getVersions: (packageName: string) => ipcRenderer.invoke('npm:get-versions', packageName),
+    getVersionMetadata: (packageName: string) => ipcRenderer.invoke('npm:get-version-metadata', packageName),
     installVersion: (args: InstallVersionArgs) => ipcRenderer.invoke('npm:install-version', args),
     globalOutdated: () => ipcRenderer.invoke('npm:global-outdated'),
     adduser: (registry?: string) => ipcRenderer.invoke('npm:adduser', registry),
@@ -100,7 +101,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tree: (cwd: string) => ipcRenderer.invoke('maven:tree', cwd),
     dependencyTree: (cwd: string) => ipcRenderer.invoke('maven:dependency-tree', cwd),
     runGoal: (cwd: string, goal: string) => ipcRenderer.invoke('maven:run-goal', cwd, goal),
-    search: (query: string, cwd?: string) => ipcRenderer.invoke('maven:search', query, cwd),
+    search: (query: string, cwd?: string, options?: MavenSearchOptions) => ipcRenderer.invoke('maven:search', query, cwd, options),
     versions: (groupId: string, artifactId: string) => ipcRenderer.invoke('maven:versions', groupId, artifactId),
     info: (cwd?: string) => ipcRenderer.invoke('maven:info', cwd),
     effectiveSettings: (cwd?: string) => ipcRenderer.invoke('maven:effective-settings', cwd),
@@ -139,7 +140,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gradle: {
     detect: (cwd: string) => ipcRenderer.invoke('gradle:detect', cwd),
     list: (cwd: string) => ipcRenderer.invoke('gradle:list', cwd),
-    search: (query: string) => ipcRenderer.invoke('gradle:search', query),
+    search: (query: string, options?: MavenSearchOptions) => ipcRenderer.invoke('gradle:search', query, options),
     versions: (groupId: string, artifactId: string) => ipcRenderer.invoke('gradle:versions', groupId, artifactId),
     addDependency: (args: GradleDependencyArgs) => ipcRenderer.invoke('gradle:add-dependency', args),
     updateDependency: (args: GradleDependencyArgs) => ipcRenderer.invoke('gradle:update-dependency', args),
@@ -162,6 +163,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     graph: (cwd: string) => ipcRenderer.invoke('go:graph', cwd),
     audit: (cwd: string) => ipcRenderer.invoke('go:audit', cwd),
     run: (cwd: string, commandLine: string) => ipcRenderer.invoke('go:run', cwd, commandLine)
+  },
+
+  native: {
+    detect: (cwd: string) => ipcRenderer.invoke('native:detect', cwd),
+    list: (cwd: string) => ipcRenderer.invoke('native:list', cwd),
+    search: (query: string) => ipcRenderer.invoke('native:search', query),
+    install: (args: NativeInstallArgs) => ipcRenderer.invoke('native:install', args),
+    uninstall: (args: NativeRemoveArgs) => ipcRenderer.invoke('native:uninstall', args),
+    run: (args: NativeRunArgs) => ipcRenderer.invoke('native:run', args),
+    configure: (cwd: string, buildDir?: string) => ipcRenderer.invoke('native:configure', cwd, buildDir),
+    build: (cwd: string, buildDir?: string) => ipcRenderer.invoke('native:build', cwd, buildDir)
+  },
+
+  dependencyHealth: {
+    scan: (manager: DependencyHealthManager, cwd: string) => ipcRenderer.invoke('dependency-health:scan', manager, cwd),
+    fix: (cwd: string, action: DependencyHealthAction) => ipcRenderer.invoke('dependency-health:fix', cwd, action)
   },
 
   terminal: {
@@ -287,9 +304,17 @@ export interface PipCommandOptions {
   breakSystemPackages?: boolean
 }
 
+export interface PipPublishArgs {
+  cwd: string
+  repositoryUrl?: string
+  username?: string
+  password?: string
+  buildBefore?: boolean
+}
+
 export type PipConfigScope = 'user' | 'global' | 'site'
 
-export type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+export type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'cmake' | 'vcpkg' | 'conan'
 export type AppLanguage = 'zh-CN' | 'en-US'
 
 export interface MavenDependencyArgs {
@@ -300,7 +325,86 @@ export interface MavenDependencyArgs {
   type?: string
 }
 
-export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go'
+export interface MavenDeployArgs {
+  cwd: string
+  repositoryId?: string
+  repositoryUrl?: string
+  skipTests?: boolean
+  goals?: string
+}
+
+export type MavenSearchMode = 'startsWith' | 'contains' | 'exact' | 'keyword'
+export type MavenSearchScope = 'artifactId' | 'groupId' | 'coordinate' | 'all'
+export type MavenSearchSource = 'mavenCentral' | 'nexus'
+
+export interface MavenSearchOptions {
+  mode?: MavenSearchMode
+  scope?: MavenSearchScope
+  source?: MavenSearchSource
+  customUrl?: string
+  includeLocal?: boolean
+  limit?: number
+}
+
+export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
+export type DependencyHealthManager = PackageManagerId
+export type DependencyHealthSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+export type DependencyHealthIssueType =
+  | 'cycle'
+  | 'version-conflict'
+  | 'peer-conflict'
+  | 'missing'
+  | 'invalid'
+  | 'extraneous'
+  | 'tooling'
+  | 'native-linkage'
+  | 'unmanaged'
+  | 'configuration'
+
+export interface DependencyHealthAction {
+  id: string
+  label: string
+  kind: 'command' | 'api' | 'openFile' | 'copy' | 'manual'
+  description?: string
+  command?: {
+    tool: ToolName
+    args: string[]
+    displayBin?: string
+  }
+  target?: string
+  payload?: string
+}
+
+export interface DependencyHealthIssue {
+  id: string
+  manager: DependencyHealthManager
+  type: DependencyHealthIssueType
+  severity: DependencyHealthSeverity
+  dependency?: string
+  title: string
+  description: string
+  suggestion: string
+  paths?: string[]
+  actions: DependencyHealthAction[]
+}
+
+export interface DependencyHealthSummary {
+  total: number
+  critical: number
+  high: number
+  medium: number
+  low: number
+  info: number
+}
+
+export interface DependencyHealthScanResult {
+  manager: DependencyHealthManager
+  cwd: string
+  scannedAt: string
+  summary: DependencyHealthSummary
+  issues: DependencyHealthIssue[]
+  raw?: string
+}
 
 export interface CargoInstallArgs {
   packageName: string
@@ -340,4 +444,24 @@ export interface GoInstallArgs {
 export interface GoPackageArgs {
   modulePath: string
   cwd: string
+}
+
+export interface NativeInstallArgs {
+  cwd: string
+  manager: 'vcpkg' | 'conan'
+  name: string
+  version?: string
+  feature?: string
+}
+
+export interface NativeRemoveArgs {
+  cwd: string
+  manager: 'vcpkg' | 'conan'
+  name: string
+}
+
+export interface NativeRunArgs {
+  cwd: string
+  tool: 'cmake' | 'vcpkg' | 'conan'
+  commandLine: string
 }

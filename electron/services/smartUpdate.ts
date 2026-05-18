@@ -125,7 +125,7 @@ export class SmartUpdateService {
   private isPrerelease(version: string): boolean {
     try {
       const parsed = semver.parse(version)
-      return parsed?.prerelease && parsed.prerelease.length > 0
+      return !!parsed?.prerelease && parsed.prerelease.length > 0
     } catch {
       return false
     }

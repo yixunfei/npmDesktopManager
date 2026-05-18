@@ -9,22 +9,26 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SecurityScanOutlined
+  SecurityScanOutlined,
+  WarningOutlined
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../stores/appStore'
+import { DependencyHealthModal } from '../../components/Package/DependencyHealthModal'
+import { useDependencyHealthReminder } from '../../hooks/useDependencyHealthReminder'
 import styles from './PluginComponents.module.css'
 
-type RuntimeManager = Extract<PackageManagerId, 'cargo' | 'gradle' | 'go'>
+type RuntimeManager = Extract<PackageManagerId, 'cargo' | 'gradle' | 'go' | 'native'>
 
-const runtimeManagers: RuntimeManager[] = ['cargo', 'gradle', 'go']
+const runtimeManagers: RuntimeManager[] = ['cargo', 'gradle', 'go', 'native']
 const existingRoutes: Partial<Record<PackageManagerId, string>> = {
   npm: '/npm',
   pip: '/pip',
   maven: '/maven',
   cargo: '/cargo',
   gradle: '/gradle',
-  go: '/go'
+  go: '/go',
+  native: '/native'
 }
 
 const managerColors: Record<PackageManagerId, string> = {
@@ -33,7 +37,8 @@ const managerColors: Record<PackageManagerId, string> = {
   maven: 'purple',
   cargo: 'volcano',
   gradle: 'green',
-  go: 'geekblue'
+  go: 'geekblue',
+  native: 'gold'
 }
 
 const commandOptions: Record<RuntimeManager, Array<{ value: string; label: string }>> = {
@@ -55,13 +60,20 @@ const commandOptions: Record<RuntimeManager, Array<{ value: string; label: strin
     { value: 'build ./...', label: 'go build ./...' },
     { value: 'mod tidy', label: 'go mod tidy' },
     { value: 'mod graph', label: 'go mod graph' }
+  ],
+  native: [
+    { value: 'cmake -S . -B build', label: 'cmake -S . -B build' },
+    { value: 'cmake --build build', label: 'cmake --build build' },
+    { value: 'vcpkg install', label: 'vcpkg install' },
+    { value: 'conan install . --output-folder=build --build=missing', label: 'conan install' }
   ]
 }
 
 const defaultCommands: Record<RuntimeManager, string> = {
   cargo: 'check',
   gradle: 'tasks --all',
-  go: 'test ./...'
+  go: 'test ./...',
+  native: 'cmake -S . -B build'
 }
 
 function isRuntimeManager(manager: PackageManagerId): manager is RuntimeManager {
@@ -82,6 +94,7 @@ const PluginComponentsPage: React.FC = () => {
   const [installVisible, setInstallVisible] = useState(false)
   const [commandVisible, setCommandVisible] = useState(false)
   const [outputVisible, setOutputVisible] = useState(false)
+  const [healthVisible, setHealthVisible] = useState(false)
   const [outputTitle, setOutputTitle] = useState('')
   const [output, setOutput] = useState('')
   const [installSearchOptions, setInstallSearchOptions] = useState<Array<{ value: string; label: string; item?: any }>>([])
@@ -99,6 +112,12 @@ const PluginComponentsPage: React.FC = () => {
     value: plugin.id,
     disabled: !plugin.enabled
   })), [plugins])
+
+  useDependencyHealthReminder(
+    activeManager as DependencyHealthManager,
+    currentPath,
+    isRuntimeManager(activeManager) && !!currentPath && dependencies.length > 0
+  )
 
   useEffect(() => {
     loadCatalog()
@@ -155,8 +174,10 @@ const PluginComponentsPage: React.FC = () => {
         setDependencies(await window.electronAPI.cargo.list(currentPath))
       } else if (manager === 'gradle') {
         setDependencies(await window.electronAPI.gradle.list(currentPath))
-      } else {
+      } else if (manager === 'go') {
         setDependencies(await window.electronAPI.go.list(currentPath))
+      } else {
+        setDependencies(await window.electronAPI.native.list(currentPath))
       }
     } catch (error: any) {
       setDependencies([])
@@ -193,6 +214,9 @@ const PluginComponentsPage: React.FC = () => {
     if (activeManager === 'gradle') {
       installForm.setFieldsValue({ configuration: 'implementation' })
     }
+    if (activeManager === 'native') {
+      installForm.setFieldsValue({ manager: 'vcpkg' })
+    }
     setInstallVisible(true)
   }
 
@@ -212,17 +236,28 @@ const PluginComponentsPage: React.FC = () => {
           item
         })))
       } else if (activeManager === 'gradle') {
-        const result = await window.electronAPI.gradle.search(normalized)
+        const result = await window.electronAPI.gradle.search(normalized, {
+          mode: 'startsWith',
+          scope: 'artifactId',
+          source: 'mavenCentral'
+        })
         setInstallSearchOptions(result.map((item) => ({
           value: `${item.groupId}:${item.artifactId}`,
           label: `${item.groupId}:${item.artifactId}${item.latestVersion ? ` (${item.latestVersion})` : ''}`,
           item
         })))
-      } else {
+      } else if (activeManager === 'go') {
         const result = await window.electronAPI.go.search(normalized, currentPath)
         setInstallSearchOptions(result.map((item) => ({
           value: item.path,
           label: `${item.path}${item.version ? ` (${item.version})` : ''}${item.description ? ` - ${item.description}` : ''}`,
+          item
+        })))
+      } else {
+        const result = await window.electronAPI.native.search(normalized)
+        setInstallSearchOptions(result.map((item) => ({
+          value: item.name,
+          label: `${item.name}${item.version ? ` (${item.version})` : ''} - ${item.manager}`,
           item
         })))
       }
@@ -249,12 +284,19 @@ const PluginComponentsPage: React.FC = () => {
         configuration: 'implementation'
       })
       setInstallVersionOptions((item.latestVersion || item.version) ? [{ value: item.latestVersion || item.version, label: item.latestVersion || item.version }] : [])
-    } else {
+    } else if (activeManager === 'go') {
       installForm.setFieldsValue({
         modulePath: item.path,
         version: item.version || item.latest
       })
       setInstallVersionOptions((item.version || item.latest) ? [{ value: item.version || item.latest, label: item.version || item.latest }] : [])
+    } else if (activeManager === 'native') {
+      installForm.setFieldsValue({
+        manager: item.manager === 'conan' ? 'conan' : 'vcpkg',
+        name: item.name,
+        version: item.version
+      })
+      setInstallVersionOptions(item.version ? [{ value: item.version, label: item.version }] : [])
     }
   }
 
@@ -270,6 +312,8 @@ const PluginComponentsPage: React.FC = () => {
         versions = await window.electronAPI.gradle.versions(values.groupId, values.artifactId)
       } else if (activeManager === 'go' && values.modulePath) {
         versions = await window.electronAPI.go.versions(values.modulePath, currentPath)
+      } else if (activeManager === 'native' && values.version) {
+        versions = [values.version]
       }
       setInstallVersionOptions(versions.map((version) => ({ value: version, label: version })))
     } catch {
@@ -297,11 +341,19 @@ const PluginComponentsPage: React.FC = () => {
           version: values.version,
           configuration: values.configuration || 'implementation'
         })
-      } else {
+      } else if (activeManager === 'go') {
         await window.electronAPI.go.install({
           cwd: currentPath,
           modulePath: values.modulePath,
           version: values.version
+        })
+      } else {
+        await window.electronAPI.native.install({
+          cwd: currentPath,
+          manager: values.manager || 'vcpkg',
+          name: values.name,
+          version: values.version,
+          feature: values.feature
         })
       }
       setInstallVisible(false)
@@ -357,6 +409,8 @@ const PluginComponentsPage: React.FC = () => {
         })
       } else if (activeManager === 'go') {
         await window.electronAPI.go.uninstall({ cwd: currentPath, modulePath: record.path })
+      } else if (activeManager === 'native' && (record.manager === 'vcpkg' || record.manager === 'conan')) {
+        await window.electronAPI.native.uninstall({ cwd: currentPath, manager: record.manager, name: record.name })
       }
       await loadDependencies(activeManager)
       addNotification({ type: 'success', message: 'Dependency removed' })
@@ -382,8 +436,15 @@ const PluginComponentsPage: React.FC = () => {
         result = await window.electronAPI.cargo.run(currentPath, values.command)
       } else if (activeManager === 'gradle') {
         result = await window.electronAPI.gradle.runTask(currentPath, values.command)
-      } else {
+      } else if (activeManager === 'go') {
         result = await window.electronAPI.go.run(currentPath, values.command)
+      } else {
+        const parts = values.command.trim().split(/\s+/)
+        const tool = parts[0] === 'cmake' || parts[0] === 'vcpkg' || parts[0] === 'conan'
+          ? parts.shift() as 'cmake' | 'vcpkg' | 'conan'
+          : 'cmake'
+        const commandLine = parts.join(' ') || values.command
+        result = await window.electronAPI.native.run({ cwd: currentPath, tool, commandLine })
       }
       setOutputTitle(`${activeManager} ${values.command}`)
       setOutput(result || 'Completed')
@@ -405,8 +466,10 @@ const PluginComponentsPage: React.FC = () => {
         result = await window.electronAPI.cargo.tree(currentPath)
       } else if (activeManager === 'gradle') {
         result = await window.electronAPI.gradle.dependencyTree(currentPath)
-      } else {
+      } else if (activeManager === 'go') {
         result = await window.electronAPI.go.graph(currentPath)
+      } else {
+        result = await window.electronAPI.native.list(currentPath).then((items) => JSON.stringify(items, null, 2))
       }
       setOutputTitle(`${activeManager} dependency graph`)
       setOutput(result || 'No graph output')
@@ -419,7 +482,20 @@ const PluginComponentsPage: React.FC = () => {
   }
 
   const runAudit = async () => {
-    if (!currentPath || !isRuntimeManager(activeManager) || activeManager === 'gradle') return
+    if (!currentPath || !isRuntimeManager(activeManager)) return
+    if (activeManager === 'native') {
+      setOutputTitle('native audit')
+      setOutput('Native audit is not available. Use CMake/vcpkg/Conan commands for project-specific checks.')
+      setOutputVisible(true)
+      return
+    }
+    if (activeManager === 'gradle') {
+      setOutputTitle('gradle audit')
+      setOutput('Gradle audit is not available from the plugin workspace. Use the Gradle manager for dependency insight.')
+      setOutputVisible(true)
+      return
+    }
+
     setLoading(true)
     try {
       const result = activeManager === 'cargo'
@@ -495,6 +571,26 @@ const PluginComponentsPage: React.FC = () => {
       ]
     }
 
+    if (activeManager === 'native') {
+      return [
+        { title: 'Name', dataIndex: 'name', key: 'name', width: 220, render: (text: string) => <Tag color="gold">{text}</Tag> },
+        { title: 'Manager', dataIndex: 'manager', key: 'manager', width: 130 },
+        { title: 'Version', dataIndex: 'version', key: 'version', width: 140, render: (text: string) => text || '-' },
+        { title: 'Linkage', dataIndex: 'linkage', key: 'linkage', width: 120, render: (text: string) => text || '-' },
+        { title: 'Path', dataIndex: 'path', key: 'path', ellipsis: true, render: (text: string) => text || '-' },
+        {
+          title: 'Actions',
+          key: 'actions',
+          width: 120,
+          render: (_: any, record: NativeDependencyInfo) => (
+            record.manager === 'vcpkg' || record.manager === 'conan'
+              ? <Button size="small" danger onClick={() => removeDependency(record)}>Remove</Button>
+              : null
+          )
+        }
+      ]
+    }
+
     return [
       { title: 'Module', dataIndex: 'path', key: 'path', width: 320, render: (text: string) => <Tag color="geekblue">{text}</Tag> },
       { title: 'Version', dataIndex: 'version', key: 'version', width: 140 },
@@ -518,6 +614,7 @@ const PluginComponentsPage: React.FC = () => {
   const dependencyRowKey = (record: any) => {
     if (activeManager === 'cargo') return `${record.type}:${record.name}`
     if (activeManager === 'gradle') return `${record.configuration}:${record.groupId}:${record.artifactId}`
+    if (activeManager === 'native') return `${record.manager}:${record.name}:${record.path || ''}`
     return record.path
   }
 
@@ -666,6 +763,35 @@ const PluginComponentsPage: React.FC = () => {
       )
     }
 
+    if (activeManager === 'native') {
+      return (
+        <>
+          <Form.Item name="manager" label="Manager" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'vcpkg', label: 'vcpkg' },
+                { value: 'conan', label: 'Conan' }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="name" label="Library" rules={[{ required: true }]}>
+            <AutoComplete
+              options={installSearchOptions}
+              onSearch={searchInstallCandidates}
+              onSelect={selectInstallCandidate}
+              placeholder="openssl"
+            />
+          </Form.Item>
+          <Form.Item name="version" label="Version">
+            <Input placeholder="Optional" />
+          </Form.Item>
+          <Form.Item name="feature" label="vcpkg Feature">
+            <Input placeholder="Optional" />
+          </Form.Item>
+        </>
+      )
+    }
+
     return (
       <>
         <Form.Item name="modulePath" label="Module" rules={[{ required: true }]}>
@@ -718,7 +844,8 @@ const PluginComponentsPage: React.FC = () => {
           <Button type="primary" icon={<PlusOutlined />} onClick={openInstallModal}>Add</Button>
           <Button icon={<PlayCircleOutlined />} onClick={openCommandModal}>Run</Button>
           <Button icon={<BranchesOutlined />} onClick={showGraph} loading={loading}>Graph</Button>
-          <Button icon={<SecurityScanOutlined />} onClick={runAudit} disabled={activeManager === 'gradle'} loading={loading}>Audit</Button>
+          <Button icon={<SecurityScanOutlined />} onClick={runAudit} loading={loading}>Audit</Button>
+          <Button icon={<WarningOutlined />} onClick={() => setHealthVisible(true)} loading={loading}>Diagnostics</Button>
         </div>
         <Spin spinning={loading}>
           {dependencies.length === 0 ? (
@@ -825,6 +952,15 @@ const PluginComponentsPage: React.FC = () => {
       >
         <pre className={styles.output}>{output}</pre>
       </Modal>
+
+      {isRuntimeManager(activeManager) && (
+        <DependencyHealthModal
+          visible={healthVisible}
+          manager={activeManager}
+          cwd={currentPath}
+          onClose={() => setHealthVisible(false)}
+        />
+      )}
     </div>
   )
 }

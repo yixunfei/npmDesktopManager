@@ -2,6 +2,7 @@ import { access, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { runLoggedCommand } from './commandRunner'
 import { resolveToolBin } from './toolchain'
+import type { MavenSearchMode, MavenSearchOptions } from './maven'
 
 export interface GradleDependency {
   groupId: string
@@ -13,6 +14,7 @@ export interface GradleDependency {
 export interface GradleSearchResult extends GradleDependency {
   latestVersion?: string
   description?: string
+  repository?: string
 }
 
 export interface GradleAddDependencyArgs extends GradleDependency {
@@ -25,6 +27,9 @@ export interface GradleRemoveDependencyArgs {
   artifactId: string
   configuration?: string
 }
+
+const GRADLE_DEPENDENCY_PACKAGINGS = new Set(['jar', 'aar', 'war', 'ear', 'pom', 'bundle'])
+export type GradleSearchOptions = MavenSearchOptions
 
 export class GradleService {
   private async executeGradle(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string }> {
@@ -55,21 +60,15 @@ export class GradleService {
     return parseGradleDependencies(content)
   }
 
-  async search(query: string): Promise<GradleSearchResult[]> {
+  async search(query: string, options?: GradleSearchOptions): Promise<GradleSearchResult[]> {
     const normalized = query.trim()
     if (!normalized) return []
-    const searchQuery = buildMavenSearchQuery(normalized)
+    const searchOptions = normalizeMavenSearchOptions(options)
     try {
-      const data = JSON.parse(await httpsGet(`https://search.maven.org/solrsearch/select?q=${encodeURIComponent(searchQuery)}&rows=20&wt=json`))
-      const docs = data.response?.docs || []
-      return docs.map((doc: any) => ({
-        groupId: doc.g,
-        artifactId: doc.a,
-        version: doc.latestVersion || '',
-        latestVersion: doc.latestVersion || '',
-        configuration: 'implementation',
-        description: 'Maven Central'
-      })).filter((item: GradleSearchResult) => item.groupId && item.artifactId)
+      const results = searchOptions.source === 'nexus'
+        ? await searchNexusRepository(normalized, searchOptions)
+        : await searchMavenCentral(normalized, searchOptions)
+      return rankGradleResults(results, normalized, searchOptions).slice(0, searchOptions.limit)
     } catch {
       return []
     }
@@ -249,21 +248,208 @@ function removeGradleDependency(content: string, dep: Pick<GradleDependency, 'gr
     .join('\n')
 }
 
-function buildMavenSearchQuery(query: string): string {
-  const [groupId, artifactId] = query.split(':').map((part) => part.trim())
-  if (groupId && artifactId) return `g:"${groupId}" AND a:"${artifactId}"`
-  if (groupId && query.includes(':')) return `g:"${groupId}"`
-  return query
-}
-
 async function httpsGet(url: string): Promise<string> {
   const https = await import('https')
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    https.get(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'npmDesktopManager/1.0'
+      }
+    }, (res) => {
       let data = ''
       res.on('data', (chunk) => { data += chunk })
       res.on('end', () => resolve(data))
     }).on('error', reject)
+  })
+}
+
+const DEFAULT_GRADLE_SEARCH_OPTIONS: Required<Omit<GradleSearchOptions, 'customUrl'>> & { customUrl: string } = {
+  mode: 'startsWith',
+  scope: 'artifactId',
+  source: 'mavenCentral',
+  customUrl: '',
+  includeLocal: false,
+  limit: 30
+}
+
+function normalizeMavenSearchOptions(options?: GradleSearchOptions): Required<Omit<GradleSearchOptions, 'customUrl'>> & { customUrl: string } {
+  return {
+    ...DEFAULT_GRADLE_SEARCH_OPTIONS,
+    ...options,
+    customUrl: options?.customUrl?.trim() || '',
+    limit: Math.min(Math.max(options?.limit || DEFAULT_GRADLE_SEARCH_OPTIONS.limit, 1), 100)
+  }
+}
+
+async function searchMavenCentral(query: string, options: Required<Omit<GradleSearchOptions, 'customUrl'>> & { customUrl: string }): Promise<GradleSearchResult[]> {
+  const batches: GradleSearchResult[][] = []
+  for (const searchQuery of buildMavenCentralQueries(query, options)) {
+    const data = JSON.parse(await httpsGet(`https://search.maven.org/solrsearch/select?q=${encodeURIComponent(searchQuery)}&rows=${Math.min(options.limit * 3, 100)}&wt=json`))
+    const docs = data.response?.docs || []
+    batches.push(docs
+      .filter(isGradleDependencyDoc)
+      .map((doc: any) => ({
+        groupId: doc.g,
+        artifactId: doc.a,
+        version: doc.latestVersion || '',
+        latestVersion: doc.latestVersion || '',
+        configuration: 'implementation',
+        description: 'Maven Central dependency',
+        repository: 'Maven Central'
+      }))
+      .filter((item: GradleSearchResult) => item.groupId && item.artifactId))
+  }
+  return uniqueGradleResults(batches.flat())
+}
+
+async function searchNexusRepository(query: string, options: Required<Omit<GradleSearchOptions, 'customUrl'>> & { customUrl: string }): Promise<GradleSearchResult[]> {
+  if (!options.customUrl) return []
+  const baseUrl = options.customUrl.replace(/\/+$/, '')
+  const url = new URL(`${baseUrl}/service/rest/v1/search`)
+  url.searchParams.set('format', 'maven2')
+  url.searchParams.set('sort', 'version')
+  url.searchParams.set('direction', 'desc')
+  for (const [key, value] of nexusSearchParams(query, options)) {
+    url.searchParams.set(key, value)
+  }
+  const data = JSON.parse(await httpsGet(url.toString()))
+  const items = Array.isArray(data.items) ? data.items : []
+  return uniqueGradleResults(items
+    .map((item: any) => nexusItemToGradleResult(item, options.customUrl))
+    .filter((item: GradleSearchResult | null): item is GradleSearchResult => Boolean(item))
+    .filter(isGradleDependencyResult))
+}
+
+function buildMavenCentralQueries(query: string, options: GradleSearchOptions): string[] {
+  const parsed = parseMavenQuery(query)
+  const mode = options.mode || DEFAULT_GRADLE_SEARCH_OPTIONS.mode
+  const scope = parsed.artifactId ? 'coordinate' : options.scope || DEFAULT_GRADLE_SEARCH_OPTIONS.scope
+  const fallback = `${escapeSolrValue(query)} AND -p:"maven-plugin"`
+
+  if (scope === 'coordinate') {
+    if (parsed.groupId && parsed.artifactId) {
+      return [`g:"${escapeSolrPhrase(parsed.groupId)}" AND ${fieldQuery('a', parsed.artifactId, mode)} AND -p:"maven-plugin"`]
+    }
+    if (parsed.groupId) return [`g:${solrPattern(parsed.groupId, mode)} AND -p:"maven-plugin"`]
+  }
+  if (scope === 'groupId') return [`${fieldQuery('g', query, mode)} AND -p:"maven-plugin"`]
+  if (scope === 'artifactId') return [`${fieldQuery('a', query, mode)} AND -p:"maven-plugin"`]
+  if (scope === 'all') {
+    return [
+      `${fieldQuery('a', query, mode)} AND -p:"maven-plugin"`,
+      `${fieldQuery('g', query, mode)} AND -p:"maven-plugin"`,
+      fallback
+    ]
+  }
+  return [fallback]
+}
+
+function nexusSearchParams(query: string, options: GradleSearchOptions): Array<[string, string]> {
+  const parsed = parseMavenQuery(query)
+  const mode = options.mode || DEFAULT_GRADLE_SEARCH_OPTIONS.mode
+  const scope = parsed.artifactId ? 'coordinate' : options.scope || DEFAULT_GRADLE_SEARCH_OPTIONS.scope
+  const artifactQuery = parsed.artifactId || query
+
+  if (scope === 'coordinate') {
+    return [
+      ...(parsed.groupId ? [['maven.groupId', parsed.groupId] as [string, string]] : []),
+      ...(artifactQuery ? [['maven.artifactId', nexusPattern(artifactQuery, mode)] as [string, string]] : [])
+    ]
+  }
+  if (scope === 'groupId') return [['maven.groupId', nexusPattern(query, mode)]]
+  if (scope === 'artifactId') return [['maven.artifactId', nexusPattern(query, mode)]]
+  return [['q', query]]
+}
+
+function fieldQuery(field: 'g' | 'a', query: string, mode: MavenSearchMode): string {
+  if (mode === 'keyword') return escapeSolrValue(query)
+  if (mode === 'exact') return `${field}:"${escapeSolrPhrase(query)}"`
+  return `${field}:${solrPattern(query, mode)}`
+}
+
+function solrPattern(query: string, mode: MavenSearchMode): string {
+  const value = escapeSolrPattern(query)
+  if (mode === 'contains') return `${value}*`
+  if (mode === 'startsWith') return `${value}*`
+  if (mode === 'exact') return `"${escapeSolrPhrase(query)}"`
+  return escapeSolrValue(query)
+}
+
+function nexusPattern(query: string, mode: MavenSearchMode): string {
+  if (mode === 'contains') return `*${query}*`
+  if (mode === 'startsWith') return `${query}*`
+  return query
+}
+
+function parseMavenQuery(query: string): { groupId: string; artifactId: string } {
+  const parts = query.split(':').map((part) => part.trim()).filter(Boolean)
+  return { groupId: parts[0] || '', artifactId: parts[1] || '' }
+}
+
+function escapeSolrPattern(value: string): string {
+  return value.trim().replace(/([+\-&|!(){}\[\]^"~?:\\/])/g, '\\$1').replace(/\s+/g, '\\ ')
+}
+
+function escapeSolrPhrase(value: string): string {
+  return value.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function escapeSolrValue(value: string): string {
+  return value.trim().split(/\s+/).map(escapeSolrPattern).filter(Boolean).join(' ')
+}
+
+function nexusItemToGradleResult(item: any, repository: string): GradleSearchResult | null {
+  const coordinates = item?.maven2 || {}
+  const groupId = coordinates.groupId || item.group || ''
+  const artifactId = coordinates.artifactId || item.name || ''
+  if (!groupId || !artifactId) return null
+  return {
+    groupId,
+    artifactId,
+    version: item.version || coordinates.version || '',
+    latestVersion: item.version || coordinates.version || '',
+    configuration: 'implementation',
+    description: `Nexus dependency (${item.repository || repository})`,
+    repository: item.repository || repository
+  }
+}
+
+function isGradleDependencyResult(item: GradleSearchResult): boolean {
+  return isGradleDependencyDoc({ g: item.groupId, a: item.artifactId, p: (item as any).type || 'jar' })
+}
+
+function rankGradleResults(items: GradleSearchResult[], query: string, options: GradleSearchOptions): GradleSearchResult[] {
+  const normalized = query.toLowerCase()
+  const mode = options.mode || DEFAULT_GRADLE_SEARCH_OPTIONS.mode
+  return uniqueGradleResults(items).sort((a, b) => {
+    const aScore = gradleResultScore(a, normalized, mode)
+    const bScore = gradleResultScore(b, normalized, mode)
+    if (aScore !== bScore) return bScore - aScore
+    return `${a.groupId}:${a.artifactId}`.localeCompare(`${b.groupId}:${b.artifactId}`)
+  })
+}
+
+function gradleResultScore(item: GradleSearchResult, query: string, mode: MavenSearchMode): number {
+  const artifact = item.artifactId.toLowerCase()
+  const group = item.groupId.toLowerCase()
+  let score = 0
+  if (artifact === query) score += 100
+  if (artifact.startsWith(query)) score += 80
+  if (artifact.includes(query)) score += 50
+  if (group.includes(query)) score += 10
+  if (item.repository === 'Maven Central') score += 4
+  if (mode === 'startsWith' && artifact.startsWith(query)) score += 8
+  return score
+}
+
+function uniqueGradleResults(items: GradleSearchResult[]): GradleSearchResult[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = `${item.groupId}:${item.artifactId}`.toLowerCase()
+    if (!item.groupId || !item.artifactId || seen.has(key)) return false
+    seen.add(key)
+    return true
   })
 }
 
@@ -272,4 +458,12 @@ function splitCommandLine(commandLine: string): string[] {
     .split(/\s+/)
     .map((part) => part.trim())
     .filter(Boolean)
+}
+
+function isGradleDependencyDoc(doc: any): boolean {
+  if (!doc?.g || !doc?.a) return false
+  if (doc.p === 'maven-plugin') return false
+  if (typeof doc.a === 'string' && doc.a.endsWith('-maven-plugin')) return false
+  if (doc.p && !GRADLE_DEPENDENCY_PACKAGINGS.has(doc.p)) return false
+  return true
 }

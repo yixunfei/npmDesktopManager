@@ -10,6 +10,8 @@ import { MavenService } from './services/maven'
 import { CargoService } from './services/cargo'
 import { GradleService } from './services/gradle'
 import { GoService } from './services/go'
+import { NativeService } from './services/native'
+import { DependencyHealthService } from './services/dependencyHealth'
 import { PluginCatalogService } from './services/pluginCatalog'
 import { TerminalService, setTerminalWindow } from './services/terminal'
 import { checkTools, openToolDownload, setToolPath, clearToolPath, getProjectToolchainConfig, checkTool, TOOL_NAMES } from './services/toolchain'
@@ -85,6 +87,8 @@ const mavenService = new MavenService()
 const cargoService = new CargoService()
 const gradleService = new GradleService()
 const goService = new GoService()
+const nativeService = new NativeService()
+const dependencyHealthService = new DependencyHealthService()
 const pluginCatalogService = new PluginCatalogService()
 const terminalService = new TerminalService()
 
@@ -173,8 +177,8 @@ function setupIpcHandlers() {
     return result.filePaths[0] || null
   })
 
-  ipcMain.handle('npm:search', async (_, query: string) => {
-    return await npmService.search(query)
+  ipcMain.handle('npm:search', async (_, query: string, limit?: number) => {
+    return await npmService.search(query, limit)
   })
 
   ipcMain.handle('npm:view', async (_, packageName: string) => {
@@ -356,6 +360,10 @@ function setupIpcHandlers() {
 
   ipcMain.handle('npm:get-versions', async (_, packageName: string) => {
     return await npmService.getVersions(packageName)
+  })
+
+  ipcMain.handle('npm:get-version-metadata', async (_, packageName: string) => {
+    return await npmService.getVersionMetadata(packageName)
   })
 
   ipcMain.handle('npm:install-version', async (_, args) => {
@@ -548,8 +556,8 @@ function setupIpcHandlers() {
     return await mavenService.runGoal(cwd, goal)
   })
 
-  ipcMain.handle('maven:search', async (_, query: string, cwd?: string) => {
-    return await mavenService.search(query, cwd)
+  ipcMain.handle('maven:search', async (_, query: string, cwd?: string, options?: any) => {
+    return await mavenService.search(query, cwd, options)
   })
 
   ipcMain.handle('maven:versions', async (_, groupId: string, artifactId: string) => {
@@ -668,8 +676,8 @@ function setupIpcHandlers() {
     return await gradleService.list(cwd)
   })
 
-  ipcMain.handle('gradle:search', async (_, query: string) => {
-    return await gradleService.search(query)
+  ipcMain.handle('gradle:search', async (_, query: string, options?: any) => {
+    return await gradleService.search(query, options)
   })
 
   ipcMain.handle('gradle:versions', async (_, groupId: string, artifactId: string) => {
@@ -746,6 +754,46 @@ function setupIpcHandlers() {
 
   ipcMain.handle('go:run', async (_, cwd: string, commandLine: string) => {
     return await goService.run(cwd, commandLine)
+  })
+
+  ipcMain.handle('native:detect', async (_, cwd: string) => {
+    return await nativeService.detect(cwd)
+  })
+
+  ipcMain.handle('native:list', async (_, cwd: string) => {
+    return await nativeService.list(cwd)
+  })
+
+  ipcMain.handle('native:search', async (_, query: string) => {
+    return await nativeService.search(query)
+  })
+
+  ipcMain.handle('native:install', async (_, args) => {
+    return await nativeService.install(args)
+  })
+
+  ipcMain.handle('native:uninstall', async (_, args) => {
+    return await nativeService.uninstall(args)
+  })
+
+  ipcMain.handle('native:run', async (_, args) => {
+    return await nativeService.run(args)
+  })
+
+  ipcMain.handle('native:configure', async (_, cwd: string, buildDir?: string) => {
+    return await nativeService.configure(cwd, buildDir)
+  })
+
+  ipcMain.handle('native:build', async (_, cwd: string, buildDir?: string) => {
+    return await nativeService.build(cwd, buildDir)
+  })
+
+  ipcMain.handle('dependency-health:scan', async (_, manager, cwd: string) => {
+    return await dependencyHealthService.scan(manager, cwd)
+  })
+
+  ipcMain.handle('dependency-health:fix', async (_, cwd: string, action) => {
+    return await dependencyHealthService.applyFix(cwd, action)
   })
 
   ipcMain.handle('terminal:create', async (_, cwd?: string) => {
