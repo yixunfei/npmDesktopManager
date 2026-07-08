@@ -11,6 +11,7 @@ export interface ProjectInfo {
   hasCargoToml: boolean
   hasGradleBuild: boolean
   hasGoMod: boolean
+  hasPubspecYaml: boolean
   hasNativeProject: boolean
   ecosystems: string[]
   packageManager: 'npm' | 'yarn' | 'pnpm' | 'unknown'
@@ -28,6 +29,7 @@ export class ProjectService {
       hasCargoToml: false,
       hasGradleBuild: false,
       hasGoMod: false,
+      hasPubspecYaml: false,
       hasNativeProject: false,
       ecosystems: [],
       packageManager: 'npm'
@@ -41,6 +43,7 @@ export class ProjectService {
       || await this.exists(join(projectPath, 'settings.gradle'))
       || await this.exists(join(projectPath, 'settings.gradle.kts'))
     info.hasGoMod = await this.exists(join(projectPath, 'go.mod'))
+    info.hasPubspecYaml = await this.exists(join(projectPath, 'pubspec.yaml'))
     info.hasNativeProject = await this.exists(join(projectPath, 'CMakeLists.txt'))
       || await this.exists(join(projectPath, 'vcpkg.json'))
       || await this.exists(join(projectPath, 'conanfile.txt'))
@@ -72,6 +75,7 @@ export class ProjectService {
       info.hasCargoToml ? 'cargo' : '',
       info.hasGradleBuild ? 'gradle' : '',
       info.hasGoMod ? 'go' : '',
+      info.hasPubspecYaml ? 'flutter' : '',
       info.hasNativeProject ? 'native' : ''
     ].filter(Boolean)
 

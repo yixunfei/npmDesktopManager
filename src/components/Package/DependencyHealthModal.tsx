@@ -28,6 +28,7 @@ const typeLabel: Record<DependencyHealthIssueType, string> = {
   missing: '缺失依赖',
   invalid: '无效依赖',
   extraneous: '多余依赖',
+  outdated: '可升级',
   tooling: '工具问题',
   'native-linkage': '链接方式',
   unmanaged: '未托管依赖',

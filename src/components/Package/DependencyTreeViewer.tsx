@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Button, Empty, Input, Modal, Space, Tag, Tree, Typography } from 'antd'
-import { CompressOutlined, ExpandOutlined, SearchOutlined } from '@ant-design/icons'
+import { CompressOutlined, EditOutlined, ExpandOutlined, SearchOutlined } from '@ant-design/icons'
 
 const { Text } = Typography
 
@@ -15,19 +15,25 @@ interface DependencyTreeViewerProps {
   title: React.ReactNode
   data: TreeLikeNode[] | TreeLikeNode | null
   onClose: () => void
+  actionLabel?: string
+  canNodeAction?: (node: TreeLikeNode) => boolean
+  onNodeAction?: (node: TreeLikeNode) => void
 }
 
 export const DependencyTreeViewer: React.FC<DependencyTreeViewerProps> = ({
   visible,
   title,
   data,
-  onClose
+  onClose,
+  actionLabel,
+  canNodeAction,
+  onNodeAction
 }) => {
   const [searchText, setSearchText] = useState('')
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
 
   const roots = useMemo(() => normalizeRoots(data), [data])
-  const treeData = useMemo(() => convertTree(roots), [roots])
+  const treeData = useMemo(() => convertTree(roots, 'root', actionLabel, onNodeAction, canNodeAction), [roots, actionLabel, onNodeAction, canNodeAction])
   const allKeys = useMemo(() => collectKeys(treeData), [treeData])
   const filteredTree = useMemo(() => filterTree(treeData, searchText), [treeData, searchText])
   const totalCount = useMemo(() => countNodes(roots), [roots])
@@ -92,7 +98,13 @@ function normalizeRoots(data: TreeLikeNode[] | TreeLikeNode | null): TreeLikeNod
   return [data]
 }
 
-function convertTree(nodes: TreeLikeNode[], parentKey = 'root'): any[] {
+function convertTree(
+  nodes: TreeLikeNode[],
+  parentKey = 'root',
+  actionLabel?: string,
+  onNodeAction?: (node: TreeLikeNode) => void,
+  canNodeAction?: (node: TreeLikeNode) => boolean
+): any[] {
   return nodes.map((node, index) => {
     const key = `${parentKey}/${node.name || index}`
     return {
@@ -102,9 +114,22 @@ function convertTree(nodes: TreeLikeNode[], parentKey = 'root'): any[] {
         <Space size={8}>
           <Tag color="blue" style={{ marginInlineEnd: 0 }}>{node.name}</Tag>
           <Text type="secondary">{node.version || 'unknown'}</Text>
+          {onNodeAction && (!canNodeAction || canNodeAction(node)) && (
+            <Button
+              size="small"
+              type="link"
+              icon={<EditOutlined />}
+              onClick={(event) => {
+                event.stopPropagation()
+                onNodeAction(node)
+              }}
+            >
+              {actionLabel || '修改'}
+            </Button>
+          )}
         </Space>
       ),
-      children: convertTree(node.dependencies || [], key)
+      children: convertTree(node.dependencies || [], key, actionLabel, onNodeAction, canNodeAction)
     }
   })
 }

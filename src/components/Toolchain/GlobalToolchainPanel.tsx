@@ -11,6 +11,7 @@ const toolLabels: Record<ToolName, string> = {
   cargo: 'Cargo / Rust',
   gradle: 'Gradle',
   go: 'Go',
+  flutter: 'Flutter',
   cmake: 'CMake',
   vcpkg: 'vcpkg',
   conan: 'Conan'
@@ -26,10 +27,11 @@ const placeholders: Partial<Record<ToolName, string>> = {
 }
 
 placeholders.cmake = 'Example: C:\\Program Files\\CMake\\bin or cmake.exe'
+placeholders.flutter = 'Example: C:\\src\\flutter\\bin or flutter.bat'
 placeholders.vcpkg = 'Example: C:\\vcpkg or vcpkg.exe'
 placeholders.conan = 'Example: C:\\Python\\Scripts or conan.exe'
 
-const tools: ToolName[] = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go', 'cmake', 'vcpkg', 'conan']
+const tools: ToolName[] = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go', 'flutter', 'cmake', 'vcpkg', 'conan']
 const emptyPaths = Object.fromEntries(tools.map((tool) => [tool, ''])) as Record<ToolName, string>
 
 function pathsFromStatuses(statuses: ToolStatus[]): Record<ToolName, string> {

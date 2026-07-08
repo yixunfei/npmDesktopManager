@@ -5,7 +5,7 @@ import { PipService } from './pip'
 import { NativeService, type NativeDependencyInfo } from './native'
 import { resolveToolBin, type ToolName } from './toolchain'
 
-export type DependencyHealthManager = 'npm' | 'pip' | 'maven' | 'gradle' | 'cargo' | 'go' | 'native'
+export type DependencyHealthManager = 'npm' | 'pip' | 'maven' | 'gradle' | 'cargo' | 'go' | 'flutter' | 'native'
 export type DependencyHealthSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 export type DependencyHealthIssueType =
   | 'cycle'
@@ -14,6 +14,7 @@ export type DependencyHealthIssueType =
   | 'missing'
   | 'invalid'
   | 'extraneous'
+  | 'outdated'
   | 'tooling'
   | 'native-linkage'
   | 'unmanaged'
@@ -134,6 +135,10 @@ export class DependencyHealthService {
         raw = result.raw
       } else if (manager === 'go') {
         const result = await this.scanGo(cwd, createIssue)
+        issues = result.issues
+        raw = result.raw
+      } else if (manager === 'flutter') {
+        const result = await this.scanFlutter(cwd, createIssue)
         issues = result.issues
         raw = result.raw
       } else {
@@ -503,6 +508,54 @@ export class DependencyHealthService {
       }))
 
     return { issues, raw }
+  }
+
+  private async scanFlutter(cwd: string, createIssue: IssueFactory): Promise<{ issues: DependencyHealthIssue[]; raw: string }> {
+    const output = await runToolCapture('flutter', ['pub', 'outdated', '--json'], cwd)
+    const raw = [output.stdout, output.stderr].filter(Boolean).join('\n')
+    const issues: DependencyHealthIssue[] = []
+    const pubspecPath = join(cwd, 'pubspec.yaml')
+    const outdatedPackages = parseFlutterOutdated(raw)
+
+    for (const item of outdatedPackages) {
+      const name = item.name
+      if (!name || !item.current || !item.latest || item.current === item.latest) continue
+      issues.push(createIssue({
+            type: 'outdated',
+            severity: item.resolvable && item.resolvable !== item.current ? 'low' : 'info',
+            dependency: name,
+            title: 'Flutter package has a newer version',
+            description: `${name} is currently resolved to ${item.current}. Latest available version is ${item.latest}.`,
+            suggestion: item.resolvable && item.resolvable !== item.latest
+          ? `Current constraints allow ${item.resolvable}. Review pubspec.yaml before moving to ${item.latest}.`
+          : 'Run flutter pub upgrade for compatible updates, or use --major-versions only when you want to change pubspec constraints.',
+            actions: [
+          commandAction('flutter-pub-outdated', 'Show outdated', 'flutter', ['pub', 'outdated']),
+          commandAction('flutter-upgrade-package', 'Upgrade package', 'flutter', ['pub', 'upgrade', name]),
+          commandAction('flutter-pub-get', 'Run pub get', 'flutter', ['pub', 'get']),
+          openFileAction(pubspecPath)
+        ]
+      }))
+    }
+
+    const declared = parseFlutterDeclaredDependencies(await readFileSafe(pubspecPath))
+    for (const [name, sections] of declared) {
+      if (sections.size <= 1) continue
+      issues.push(createIssue({
+        type: 'configuration',
+        severity: 'medium',
+        dependency: name,
+        title: 'Dependency is declared in multiple pubspec sections',
+        description: `${name} appears in ${[...sections].join(', ')}.`,
+        suggestion: 'Keep the package in one pubspec section unless dependency_overrides is intentionally being used.',
+        actions: [
+          openFileAction(pubspecPath),
+          commandAction('flutter-pub-get', 'Run pub get', 'flutter', ['pub', 'get'])
+        ]
+      }))
+    }
+
+    return { issues: uniqueIssues(issues), raw }
   }
 
   private async scanNative(cwd: string, createIssue: IssueFactory): Promise<{ issues: DependencyHealthIssue[]; raw: string }> {
@@ -883,6 +936,46 @@ function parseGoModuleToken(token: string): { path: string; version: string } | 
     path: token.slice(0, at),
     version: token.slice(at + 1)
   }
+}
+
+function parseFlutterOutdated(raw: string): Array<{ name: string; current?: string; upgradable?: string; resolvable?: string; latest?: string }> {
+  const parsed = parseJson<any>(raw, null)
+  const packages = Array.isArray(parsed?.packages)
+    ? parsed.packages
+    : parsed?.packages && typeof parsed.packages === 'object'
+      ? Object.entries(parsed.packages).map(([name, value]) => ({ name, ...(value as object) }))
+      : []
+
+  return packages.map((item: any) => ({
+    name: item.package || item.name || '',
+    current: item.current?.version || item.current,
+    upgradable: item.upgradable?.version || item.upgradable,
+    resolvable: item.resolvable?.version || item.resolvable,
+    latest: item.latest?.version || item.latest
+  }))
+}
+
+function parseFlutterDeclaredDependencies(content: string): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>()
+  let section = ''
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+#.*$/, '')
+    const topLevel = line.match(/^([A-Za-z_][\w-]*):/)
+    if (topLevel) {
+      section = ['dependencies', 'dev_dependencies', 'dependency_overrides'].includes(topLevel[1]) ? topLevel[1] : ''
+      continue
+    }
+
+    if (!section) continue
+    const dep = line.match(/^\s{2}([A-Za-z0-9_.-]+):/)
+    if (!dep) continue
+    const sections = result.get(dep[1]) || new Set<string>()
+    sections.add(section)
+    result.set(dep[1], sections)
+  }
+
+  return result
 }
 
 function nativeManifestActions(cwd: string): DependencyHealthAction[] {

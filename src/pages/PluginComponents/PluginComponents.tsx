@@ -28,6 +28,7 @@ const existingRoutes: Partial<Record<PackageManagerId, string>> = {
   cargo: '/cargo',
   gradle: '/gradle',
   go: '/go',
+  flutter: '/flutter',
   native: '/native'
 }
 
@@ -38,6 +39,7 @@ const managerColors: Record<PackageManagerId, string> = {
   cargo: 'volcano',
   gradle: 'green',
   go: 'geekblue',
+  flutter: 'cyan',
   native: 'gold'
 }
 

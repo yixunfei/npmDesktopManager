@@ -147,6 +147,28 @@ declare global {
         run: (cwd: string, commandLine: string) => Promise<string>
       }
 
+      flutter: {
+        detect: (cwd: string) => Promise<{ hasPubspec: boolean; path: string }>
+        read: (cwd: string) => Promise<FlutterPubspecInfo>
+        list: (cwd: string) => Promise<FlutterDependencyInfo[]>
+        assets: (cwd: string) => Promise<FlutterAssetInfo[]>
+        search: (query: string) => Promise<FlutterSearchResult[]>
+        versions: (packageName: string) => Promise<string[]>
+        addDependency: (args: FlutterDependencyArgs) => Promise<string>
+        updateDependency: (args: { cwd: string; packageName?: string; type?: FlutterDependencyType }) => Promise<string>
+        removeDependency: (args: { cwd: string; packageName: string; type?: FlutterDependencyType }) => Promise<string>
+        outdated: (cwd: string) => Promise<FlutterOutdatedResult>
+        deps: (cwd: string) => Promise<string>
+        dependencyTree: (cwd: string) => Promise<FlutterDependencyTreeNode>
+        get: (cwd: string) => Promise<string>
+        run: (cwd: string, commandLine: string) => Promise<string>
+        addAsset: (args: { cwd: string; path: string }) => Promise<void>
+        removeAsset: (args: { cwd: string; path: string }) => Promise<void>
+        checkPublish: (cwd: string) => Promise<FlutterPublishCheckResult>
+        publish: (args: FlutterPublishArgs) => Promise<string>
+        securityAudit: (cwd: string) => Promise<FlutterSecurityAuditResult>
+      }
+
       native: {
         detect: (cwd: string) => Promise<NativeDetectResult>
         list: (cwd: string) => Promise<NativeDependencyInfo[]>
@@ -446,8 +468,8 @@ declare global {
     code: number | null
   }
 
-  type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'cmake' | 'vcpkg' | 'conan'
-  type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
+  type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'flutter' | 'cmake' | 'vcpkg' | 'conan'
+  type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'flutter' | 'native'
   type DependencyHealthManager = PackageManagerId
   type DependencyHealthSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
   type DependencyHealthIssueType =
@@ -457,6 +479,7 @@ declare global {
     | 'missing'
     | 'invalid'
     | 'extraneous'
+    | 'outdated'
     | 'tooling'
     | 'native-linkage'
     | 'unmanaged'
@@ -487,6 +510,7 @@ declare global {
     cargo?: string
     gradle?: string
     go?: string
+    flutter?: string
     cmake?: string
     vcpkg?: string
     conan?: string
@@ -583,6 +607,124 @@ declare global {
   interface GoPackageArgs {
     modulePath: string
     cwd: string
+  }
+
+  type FlutterDependencyType = 'dependencies' | 'dev_dependencies' | 'dependency_overrides'
+  type FlutterDependencySource = 'hosted' | 'sdk' | 'path' | 'git'
+
+  interface FlutterDependencyInfo {
+    name: string
+    version: string
+    type: FlutterDependencyType
+    source?: FlutterDependencySource
+    sdk?: string
+    path?: string
+    git?: string
+  }
+
+  interface FlutterAssetInfo {
+    path: string
+    kind: 'file' | 'directory' | 'unknown'
+  }
+
+  interface FlutterDependencyTreeNode {
+    name: string
+    version?: string
+    type?: string
+    source?: string
+    dependencies: FlutterDependencyTreeNode[]
+  }
+
+  interface FlutterPubspecInfo {
+    hasPubspec: boolean
+    path: string
+    name: string
+    version: string
+    description: string
+    publishTo?: string
+    environmentSdk?: string
+    dependencies: FlutterDependencyInfo[]
+    assets: FlutterAssetInfo[]
+  }
+
+  interface FlutterSearchResult {
+    name: string
+    version?: string
+    description?: string
+    popularity?: number
+    likes?: number
+    pubPoints?: number
+  }
+
+  interface FlutterDependencyArgs {
+    cwd: string
+    packageName: string
+    version?: string
+    type?: FlutterDependencyType
+    source?: FlutterDependencySource
+    sdk?: string
+    path?: string
+    git?: string
+  }
+
+  interface FlutterPublishArgs {
+    cwd: string
+    dryRun?: boolean
+    force?: boolean
+    server?: string
+  }
+
+  interface FlutterPublishCheckResult {
+    canPublish: boolean
+    errors: string[]
+    warnings: string[]
+    packageInfo: FlutterPubspecInfo | null
+  }
+
+  interface FlutterOutdatedVersion {
+    version?: string
+  }
+
+  interface FlutterOutdatedPackage {
+    package?: string
+    name?: string
+    current?: FlutterOutdatedVersion
+    upgradable?: FlutterOutdatedVersion
+    resolvable?: FlutterOutdatedVersion
+    latest?: FlutterOutdatedVersion
+  }
+
+  interface FlutterOutdatedResult {
+    packages?: FlutterOutdatedPackage[] | Record<string, FlutterOutdatedPackage>
+    error?: string
+  }
+
+  interface FlutterSecurityIssue {
+    packageName: string
+    version: string
+    dependencyType?: string
+    source?: string
+    id: string
+    summary: string
+    details?: string
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'info' | 'unknown'
+    aliases: string[]
+    published?: string
+    modified?: string
+    affectedRange?: string
+    fixedVersion?: string
+    references: Array<{ type?: string; url: string }>
+    url: string
+  }
+
+  interface FlutterSecurityAuditResult {
+    scannedAt: string
+    source: 'pubspec.lock' | 'pubspec.yaml'
+    dependencyCount: number
+    vulnerableCount: number
+    skipped: string[]
+    issues: FlutterSecurityIssue[]
+    error?: string
   }
 
   interface NativeDetectResult {

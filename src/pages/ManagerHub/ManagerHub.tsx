@@ -96,6 +96,17 @@ const ManagerHub: React.FC = () => {
 
         <Card className={styles.card} variant="borderless">
           <Space orientation="vertical" size={12}>
+            <CodeOutlined className={styles.icon} />
+            <Title level={4}>Flutter pub 管理</Title>
+            <Paragraph className={styles.cardText}>
+              pubspec.yaml 依赖、资源 assets、pub get/outdated/deps 与 pub.dev 发布检查。
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate('/flutter')}>进入 Flutter 管理</Button>
+          </Space>
+        </Card>
+
+        <Card className={styles.card} variant="borderless">
+          <Space orientation="vertical" size={12}>
             <ApiOutlined className={styles.icon} />
             <Title level={4}>C/C++ Native</Title>
             <Paragraph className={styles.cardText}>

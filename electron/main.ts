@@ -10,6 +10,7 @@ import { MavenService } from './services/maven'
 import { CargoService } from './services/cargo'
 import { GradleService } from './services/gradle'
 import { GoService } from './services/go'
+import { FlutterService } from './services/flutter'
 import { NativeService } from './services/native'
 import { DependencyHealthService } from './services/dependencyHealth'
 import { PluginCatalogService } from './services/pluginCatalog'
@@ -87,6 +88,7 @@ const mavenService = new MavenService()
 const cargoService = new CargoService()
 const gradleService = new GradleService()
 const goService = new GoService()
+const flutterService = new FlutterService()
 const nativeService = new NativeService()
 const dependencyHealthService = new DependencyHealthService()
 const pluginCatalogService = new PluginCatalogService()
@@ -754,6 +756,82 @@ function setupIpcHandlers() {
 
   ipcMain.handle('go:run', async (_, cwd: string, commandLine: string) => {
     return await goService.run(cwd, commandLine)
+  })
+
+  ipcMain.handle('flutter:detect', async (_, cwd: string) => {
+    return await flutterService.detect(cwd)
+  })
+
+  ipcMain.handle('flutter:read', async (_, cwd: string) => {
+    return await flutterService.read(cwd)
+  })
+
+  ipcMain.handle('flutter:list', async (_, cwd: string) => {
+    return await flutterService.list(cwd)
+  })
+
+  ipcMain.handle('flutter:assets', async (_, cwd: string) => {
+    return await flutterService.assets(cwd)
+  })
+
+  ipcMain.handle('flutter:search', async (_, query: string) => {
+    return await flutterService.search(query)
+  })
+
+  ipcMain.handle('flutter:versions', async (_, packageName: string) => {
+    return await flutterService.versions(packageName)
+  })
+
+  ipcMain.handle('flutter:add-dependency', async (_, args) => {
+    return await flutterService.addDependency(args)
+  })
+
+  ipcMain.handle('flutter:update-dependency', async (_, args) => {
+    return await flutterService.update(args)
+  })
+
+  ipcMain.handle('flutter:remove-dependency', async (_, args) => {
+    return await flutterService.removeDependency(args)
+  })
+
+  ipcMain.handle('flutter:outdated', async (_, cwd: string) => {
+    return await flutterService.outdated(cwd)
+  })
+
+  ipcMain.handle('flutter:deps', async (_, cwd: string) => {
+    return await flutterService.deps(cwd)
+  })
+
+  ipcMain.handle('flutter:dependency-tree', async (_, cwd: string) => {
+    return await flutterService.dependencyTree(cwd)
+  })
+
+  ipcMain.handle('flutter:get', async (_, cwd: string) => {
+    return await flutterService.get(cwd)
+  })
+
+  ipcMain.handle('flutter:run', async (_, cwd: string, commandLine: string) => {
+    return await flutterService.run(cwd, commandLine)
+  })
+
+  ipcMain.handle('flutter:add-asset', async (_, args) => {
+    return await flutterService.addAsset(args)
+  })
+
+  ipcMain.handle('flutter:remove-asset', async (_, args) => {
+    return await flutterService.removeAsset(args)
+  })
+
+  ipcMain.handle('flutter:check-publish', async (_, cwd: string) => {
+    return await flutterService.checkPublish(cwd)
+  })
+
+  ipcMain.handle('flutter:publish', async (_, args) => {
+    return await flutterService.publish(args)
+  })
+
+  ipcMain.handle('flutter:security-audit', async (_, cwd: string) => {
+    return await flutterService.securityAudit(cwd)
   })
 
   ipcMain.handle('native:detect', async (_, cwd: string) => {

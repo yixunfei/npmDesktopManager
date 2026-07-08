@@ -3,7 +3,7 @@ import { access, mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { checkTools, ToolName } from './toolchain'
 
-export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
+export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'flutter' | 'native'
 
 export interface PackageManagerPlugin {
   id: PackageManagerId
@@ -99,6 +99,18 @@ const PLUGIN_DEFINITIONS: Array<Omit<PackageManagerPlugin, 'enabled' | 'detected
     lockFiles: ['go.sum'],
     capabilities: ['modules', 'versions', 'tidy', 'graph', 'vulnerability scan'],
     scenarios: ['cloud services', 'CLI', 'microservices'],
+    builtIn: true
+  },
+  {
+    id: 'flutter',
+    name: 'Flutter pub',
+    language: 'Dart / Flutter',
+    packageManager: 'flutter pub',
+    tools: ['flutter'],
+    manifestFiles: ['pubspec.yaml'],
+    lockFiles: ['pubspec.lock'],
+    capabilities: ['pubspec dependencies', 'assets', 'pub get', 'outdated', 'publish'],
+    scenarios: ['Flutter apps', 'Dart packages', 'mobile', 'desktop', 'web'],
     builtIn: true
   },
   {

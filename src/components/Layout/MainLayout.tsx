@@ -77,6 +77,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       label: t('layout.goManagement')
     },
     {
+      key: '/flutter',
+      icon: <CodeOutlined />,
+      label: t('layout.flutterManagement')
+    },
+    {
       key: '/native',
       icon: <ApiOutlined />,
       label: t('layout.nativeManagement')

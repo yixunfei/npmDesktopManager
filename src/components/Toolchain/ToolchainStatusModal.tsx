@@ -9,6 +9,7 @@ const toolLabels: Record<ToolName, string> = {
   cargo: 'Cargo / Rust',
   gradle: 'Gradle',
   go: 'Go',
+  flutter: 'Flutter',
   cmake: 'CMake',
   vcpkg: 'vcpkg',
   conan: 'Conan'

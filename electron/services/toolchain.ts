@@ -3,7 +3,7 @@ import { access, mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { runLoggedCommand } from './commandRunner'
 
-export const TOOL_NAMES = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go', 'cmake', 'vcpkg', 'conan'] as const
+export const TOOL_NAMES = ['npm', 'pip', 'maven', 'cargo', 'gradle', 'go', 'flutter', 'cmake', 'vcpkg', 'conan'] as const
 export type ToolName = typeof TOOL_NAMES[number]
 
 export type ToolchainConfig = Partial<Record<ToolName, string>>
@@ -24,6 +24,7 @@ const DEFAULT_DOWNLOADS: Record<ToolName, string> = {
   cargo: 'https://www.rust-lang.org/tools/install',
   gradle: 'https://gradle.org/install/',
   go: 'https://go.dev/dl/',
+  flutter: 'https://docs.flutter.dev/get-started/install',
   cmake: 'https://cmake.org/download/',
   vcpkg: 'https://learn.microsoft.com/vcpkg/get_started/get-started',
   conan: 'https://conan.io/downloads'
@@ -36,6 +37,7 @@ const DEFAULT_BINS: Record<ToolName, string> = {
   cargo: process.platform === 'win32' ? 'cargo.exe' : 'cargo',
   gradle: process.platform === 'win32' ? 'gradle.bat' : 'gradle',
   go: process.platform === 'win32' ? 'go.exe' : 'go',
+  flutter: process.platform === 'win32' ? 'flutter.bat' : 'flutter',
   cmake: process.platform === 'win32' ? 'cmake.exe' : 'cmake',
   vcpkg: process.platform === 'win32' ? 'vcpkg.exe' : 'vcpkg',
   conan: process.platform === 'win32' ? 'conan.exe' : 'conan'
@@ -194,7 +196,7 @@ async function getCheckCandidates(tool: ToolName, configuredPath?: string): Prom
 }
 
 function directoryBinCandidates(tool: ToolName, directory: string): string[] {
-  if (tool === 'maven' || tool === 'gradle' || tool === 'cargo' || tool === 'go' || tool === 'cmake' || tool === 'vcpkg' || tool === 'conan') {
+  if (tool === 'maven' || tool === 'gradle' || tool === 'cargo' || tool === 'go' || tool === 'flutter' || tool === 'cmake' || tool === 'vcpkg' || tool === 'conan') {
     return [
       join(directory, DEFAULT_BINS[tool]),
       join(directory, 'bin', DEFAULT_BINS[tool])
@@ -206,7 +208,7 @@ function directoryBinCandidates(tool: ToolName, directory: string): string[] {
 
 function versionArgs(tool: ToolName): string[] {
   if (tool === 'maven' || tool === 'gradle') return ['-version']
-  if (tool === 'go' || tool === 'cmake' || tool === 'conan') return ['--version']
+  if (tool === 'go' || tool === 'flutter' || tool === 'cmake' || tool === 'conan') return ['--version']
   if (tool === 'vcpkg') return ['version']
   return ['--version']
 }

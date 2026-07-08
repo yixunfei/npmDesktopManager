@@ -165,6 +165,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     run: (cwd: string, commandLine: string) => ipcRenderer.invoke('go:run', cwd, commandLine)
   },
 
+  flutter: {
+    detect: (cwd: string) => ipcRenderer.invoke('flutter:detect', cwd),
+    read: (cwd: string) => ipcRenderer.invoke('flutter:read', cwd),
+    list: (cwd: string) => ipcRenderer.invoke('flutter:list', cwd),
+    assets: (cwd: string) => ipcRenderer.invoke('flutter:assets', cwd),
+    search: (query: string) => ipcRenderer.invoke('flutter:search', query),
+    versions: (packageName: string) => ipcRenderer.invoke('flutter:versions', packageName),
+    addDependency: (args: FlutterDependencyArgs) => ipcRenderer.invoke('flutter:add-dependency', args),
+    updateDependency: (args: { cwd: string; packageName?: string; type?: FlutterDependencyType }) => ipcRenderer.invoke('flutter:update-dependency', args),
+    removeDependency: (args: { cwd: string; packageName: string; type?: FlutterDependencyType }) => ipcRenderer.invoke('flutter:remove-dependency', args),
+    outdated: (cwd: string) => ipcRenderer.invoke('flutter:outdated', cwd),
+    deps: (cwd: string) => ipcRenderer.invoke('flutter:deps', cwd),
+    dependencyTree: (cwd: string) => ipcRenderer.invoke('flutter:dependency-tree', cwd),
+    get: (cwd: string) => ipcRenderer.invoke('flutter:get', cwd),
+    run: (cwd: string, commandLine: string) => ipcRenderer.invoke('flutter:run', cwd, commandLine),
+    addAsset: (args: { cwd: string; path: string }) => ipcRenderer.invoke('flutter:add-asset', args),
+    removeAsset: (args: { cwd: string; path: string }) => ipcRenderer.invoke('flutter:remove-asset', args),
+    checkPublish: (cwd: string) => ipcRenderer.invoke('flutter:check-publish', cwd),
+    publish: (args: FlutterPublishArgs) => ipcRenderer.invoke('flutter:publish', args),
+    securityAudit: (cwd: string) => ipcRenderer.invoke('flutter:security-audit', cwd)
+  },
+
   native: {
     detect: (cwd: string) => ipcRenderer.invoke('native:detect', cwd),
     list: (cwd: string) => ipcRenderer.invoke('native:list', cwd),
@@ -314,7 +336,7 @@ export interface PipPublishArgs {
 
 export type PipConfigScope = 'user' | 'global' | 'site'
 
-export type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'cmake' | 'vcpkg' | 'conan'
+export type ToolName = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'flutter' | 'cmake' | 'vcpkg' | 'conan'
 export type AppLanguage = 'zh-CN' | 'en-US'
 
 export interface MavenDependencyArgs {
@@ -346,7 +368,7 @@ export interface MavenSearchOptions {
   limit?: number
 }
 
-export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'native'
+export type PackageManagerId = 'npm' | 'pip' | 'maven' | 'cargo' | 'gradle' | 'go' | 'flutter' | 'native'
 export type DependencyHealthManager = PackageManagerId
 export type DependencyHealthSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 export type DependencyHealthIssueType =
@@ -356,6 +378,7 @@ export type DependencyHealthIssueType =
   | 'missing'
   | 'invalid'
   | 'extraneous'
+  | 'outdated'
   | 'tooling'
   | 'native-linkage'
   | 'unmanaged'
@@ -444,6 +467,27 @@ export interface GoInstallArgs {
 export interface GoPackageArgs {
   modulePath: string
   cwd: string
+}
+
+export type FlutterDependencyType = 'dependencies' | 'dev_dependencies' | 'dependency_overrides'
+export type FlutterDependencySource = 'hosted' | 'sdk' | 'path' | 'git'
+
+export interface FlutterDependencyArgs {
+  cwd: string
+  packageName: string
+  version?: string
+  type?: FlutterDependencyType
+  source?: FlutterDependencySource
+  sdk?: string
+  path?: string
+  git?: string
+}
+
+export interface FlutterPublishArgs {
+  cwd: string
+  dryRun?: boolean
+  force?: boolean
+  server?: string
 }
 
 export interface NativeInstallArgs {
